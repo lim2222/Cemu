@@ -355,6 +355,8 @@ namespace proc_ui
 	{
 		if (!s_isInitialized.exchange(false))
 			return;
+		if (!OSIsSchedulerActive())
+			return; // CafeSystem shutdown in progress, OS functions shouldn't be called anymore. reset() will clean up state on next re-init
 		if ( !s_isInForeground )
 			CancelBackgroundAlarms();
 		for (sint32 i = 0; i < Espresso::CORE_COUNT; i++)
@@ -774,7 +776,7 @@ namespace proc_ui
 			uint32be memBoundSize;
 			OSGetMemBound(1, &memBound, &memBoundSize);
 			OSBlockMove(memBound.GetPtr(), s_mem1StorageBasePtr, memBoundSize, true);
-			GX2::GX2Invalidate(0x40, s_mem1StorageBasePtr.GetMPTR(), memBoundSize);
+			GX2::GX2Invalidate(GX2::GX2InvalidationFlag::CPU, s_mem1StorageBasePtr.GetMPTR(), memBoundSize);
 		}
 		if (s_bucketStorageBasePtr)
 		{
@@ -782,7 +784,7 @@ namespace proc_ui
 			uint32be memBoundSize;
 			OSGetForegroundBucketFreeArea(&memBound, &memBoundSize);
 			OSBlockMove(memBound.GetPtr(), s_bucketStorageBasePtr, memBoundSize, true);
-			GX2::GX2Invalidate(0x40, memBound.GetMPTR(), memBoundSize);
+			GX2::GX2Invalidate(GX2::GX2InvalidationFlag::CPU, memBound.GetMPTR(), memBoundSize);
 		}
 	}
 

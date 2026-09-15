@@ -199,8 +199,6 @@ void nnNfpExport_SetActivateEvent(PPCInterpreter_t* hCPU)
 	ppcDefineParamStructPtr(osEvent, coreinit::OSEvent, 0);
 	ppcDefineParamMPTR(osEventMPTR, 0);
 
-	debug_printf("nn_nfp.SetActivateEvent(0x%08x)\n", osEventMPTR);
-
 	coreinit::OSInitEvent(osEvent, coreinit::OSEvent::EVENT_STATE::STATE_NOT_SIGNALED, coreinit::OSEvent::EVENT_MODE::MODE_AUTO);
 
 	nnNfpLock();
@@ -228,7 +226,6 @@ void nnNfpExport_SetDeactivateEvent(PPCInterpreter_t* hCPU)
 
 void nnNfpExport_Initialize(PPCInterpreter_t* hCPU)
 {
-	debug_printf("Nfp Initialize()\n");
 	nfp_data.nfpIsInitialized = true;
 	nfp_data.isDetecting = false;
 	nfp_data.hasActiveAmiibo = false;
@@ -915,7 +912,7 @@ void nnNfpExport_GetNfpState(PPCInterpreter_t* hCPU)
 	uint64 titleId = CafeSystem::GetForegroundTitleId();
 	if (titleId == 0x0005000010162d00 || titleId == 0x0005000010162e00)
 	{
-		coreinit::OSSleepTicks(ESPRESSO_CORE_CLOCK / 100); // pause for 10ms
+		coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK / 100); // pause for 10ms
 	}
 
 	uint32 nfpState;

@@ -19,10 +19,6 @@ add_library(CemuInput
 	api/Keyboard/KeyboardControllerProvider.cpp
 	api/Keyboard/KeyboardController.cpp
 	api/Keyboard/KeyboardController.h
-	api/GameCube/GameCubeController.cpp
-	api/GameCube/GameCubeControllerProvider.h
-	api/GameCube/GameCubeControllerProvider.cpp
-	api/GameCube/GameCubeController.h
 	emulated/ProController.cpp
 	emulated/EmulatedController.h
 	emulated/EmulatedController.cpp
@@ -40,6 +36,15 @@ add_library(CemuInput
 set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 cemu_use_precompiled_header(CemuInput)
+
+if (ENABLE_LIBUSB)
+	target_sources(CemuInput PRIVATE
+		api/GameCube/GameCubeController.cpp
+		api/GameCube/GameCubeControllerProvider.h
+		api/GameCube/GameCubeControllerProvider.cpp
+		api/GameCube/GameCubeController.h
+	)
+endif()
 
 if(WIN32)
 	# XInput
@@ -97,7 +102,6 @@ if(ANDROID)
 		api/Device/DeviceControllerProvider.h
 	)
 endif()
-
 if(ENABLE_SDL)
 	target_sources(CemuInput PRIVATE
 		api/SDL/SDLController.cpp
@@ -105,6 +109,7 @@ if(ENABLE_SDL)
 		api/SDL/SDLController.h
 		api/SDL/SDLControllerProvider.h
 	)
+	target_link_libraries(CemuInput PRIVATE SDL3::SDL3)
 endif()
 target_include_directories(CemuInput PUBLIC "../")
 
@@ -116,11 +121,6 @@ target_link_libraries(CemuInput PRIVATE
 if (ENABLE_HIDAPI)
 	target_link_libraries(CemuInput PRIVATE hidapi::hidapi)
 endif()
-
-if(ENABLE_SDL)
-	target_link_libraries(CemuInput PRIVATE	SDL2::SDL2)
-endif()
-
 if (ENABLE_BLUEZ)
 	target_link_libraries(CemuInput PRIVATE bluez::bluez)
 endif ()

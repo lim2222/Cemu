@@ -12,22 +12,23 @@
 #include "util/crypto/aes128.h"
 
 #include "Cafe/Filesystem/FST/FST.h"
+#include "Cafe/TitleList/TitleId.h"
 #include "util/helpers/StringHelpers.h"
 
 void requireConsole();
 
-bool LaunchSettings::HandleCommandline(const wchar_t* lpCmdLine)
+std::optional<int> LaunchSettings::HandleCommandline(const wchar_t* lpCmdLine)
 {
 	#if BOOST_OS_WINDOWS
 	const std::vector<std::wstring> args = boost::program_options::split_winmain(lpCmdLine);
 	return HandleCommandline(args);
 	#else
 	cemu_assert_unimplemented();
-	return false;
+	return 1;
 	#endif
 }
 
-bool LaunchSettings::HandleCommandline(int argc, wchar_t* argv[])
+std::optional<int> LaunchSettings::HandleCommandline(int argc, wchar_t* argv[])
 {
 	std::vector<std::wstring> args;
 	args.reserve(argc);
@@ -39,7 +40,7 @@ bool LaunchSettings::HandleCommandline(int argc, wchar_t* argv[])
 	return HandleCommandline(args);
 }
 
-bool LaunchSettings::HandleCommandline(int argc, char* argv[])
+std::optional<int> LaunchSettings::HandleCommandline(int argc, char* argv[])
 {
 	std::vector<std::wstring> args;
 	args.reserve(argc);
@@ -51,7 +52,7 @@ bool LaunchSettings::HandleCommandline(int argc, char* argv[])
 	return HandleCommandline(args);
 }
 
-bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
+std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 {
 	namespace po = boost::program_options;
 	po::options_description desc{ "Launch options" };
@@ -63,7 +64,7 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 #endif
 
 		("game,g", po::wvalue<std::wstring>(), "Path of game to launch")
-        ("title-id,t", po::value<std::string>(), "Title ID of the title to be launched (overridden by --game)")
+		("title-id,t", po::value<std::string>(), "Title ID of the title to be launched (overridden by --game)")
 		("mlc,m", po::wvalue<std::wstring>(), "Custom mlc folder location")
 
 		("fullscreen,f", po::value<bool>()->implicit_value(true), "Launch games in fullscreen mode")
@@ -71,9 +72,14 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 
 		("account,a", po::value<std::string>(), "Persistent id of account")
 
+		("cos-mounts", po::wvalue<std::vector<std::wstring>>()->composing(), "A series of mounts in the form of: (path on host:path within emulated system, e.g. `/tmp:/vol/temporary/`)")
+		("forward-console-logging", "Forward OSReport, OSConsoleWrite, etc. to stdout/stderr.")
+		("cos-argstr", po::value<std::string>(), "A custom argstr ('file.rpx ....') that overrides the arguments to the first RPX that is launched, and will be unset after the first launch.")
+
 		("force-interpreter", po::value<bool>()->implicit_value(true), "Force interpreter CPU emulation, disables recompiler. Useful for debugging purposes where you want to get accurate memory accesses and stack traces.")
 		("force-multicore-interpreter", po::value<bool>()->implicit_value(true), "Force multi-core interpreter CPU emulation, disables recompiler. Only useful for getting stack traces, but slightly faster than the single-core interpreter mode.")
-		("enable-gdbstub", po::value<bool>()->implicit_value(true), "Enable GDB stub to debug executables inside Cemu using an external debugger");
+		("enable-gdbstub", po::value<bool>()->implicit_value(true), "Enable GDB stub to debug executables inside Cemu using an external debugger")
+		("open-debugger", po::value<bool>()->implicit_value(true), "Open the PPC debugger window on startup");
 
 	po::options_description hidden{ "Hidden options" };
 	hidden.add_options()
@@ -112,7 +118,7 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 		{
 			requireConsole();
 			std::cout << visible << std::endl;
-			return false; // exit in main
+			return 0; // exit in main
 		}
 		if (vm.count("version"))
 		{
@@ -124,7 +130,7 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 			versionStr = fmt::format("{}.{}.{}{}", EMULATOR_VERSION_MAJOR, EMULATOR_VERSION_MINOR, EMULATOR_VERSION_PATCH, EMULATOR_VERSION_SUFFIX);
 #endif
 			std::cout << versionStr << std::endl;
-			return false; // exit in main
+			return 0; // exit in main
 		}
 
 		if (vm.count("verbose"))
@@ -141,13 +147,14 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 		}
         if (vm.count("title-id"))
         {
-            auto title_param = vm["title-id"].as<std::string>();
+            auto titleParam = vm["title-id"].as<std::string>();
             try {
-
-                if (title_param.starts_with('=')){
-                    title_param.erase(title_param.begin());
-                }
-                s_load_title_id = std::stoull(title_param, nullptr, 16);
+                if (titleParam.starts_with('='))
+                    titleParam.erase(titleParam.begin());
+            	TitleId titleId{};
+            	if (!TitleIdParser::ParseFromStr(titleParam, titleId))
+            		std::cerr << "Invalid title id format";
+                s_load_title_id = titleId;
             }
             catch (std::invalid_argument const& e)
             {
@@ -189,6 +196,51 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 		if (vm.count("enable-gdbstub"))
 			s_enable_gdbstub = vm["enable-gdbstub"].as<bool>();
 
+		if (vm.count("open-debugger"))
+			s_open_debugger = vm["open-debugger"].as<bool>();
+
+		if (vm.count("forward-console-logging"))
+		{
+			requireConsole();
+			s_forward_console_logging = true;
+		}
+
+		if (vm.count("cos-argstr")) {
+			std::string potential_argstr = vm["cos-argstr"].as<std::string>();
+
+			// Validate our first argument has a '.rpx'; this is a requirement of COS.
+			size_t space_pos = potential_argstr.find(' ');
+			std::string_view first_arg = (space_pos == std::string_view::npos) ? std::string_view(potential_argstr) : std::string_view(potential_argstr).substr(0, space_pos);
+			if (first_arg.length() < 4 || first_arg.substr(first_arg.length() - 4) != ".rpx") {
+				std::cout << "--cos-argstr's first argument _must_ be a filename that ends in '.rpx'." << std::endl;
+				return 1;
+			}
+			s_cos_argstr = potential_argstr;
+		}
+
+		if (vm.count("cos-mounts"))
+		{
+			for (const auto& argument : vm["cos-mounts"].as<std::vector<std::wstring>>())
+			{
+				sint32 winDriveColonOffset = 0;
+#if BOOST_OS_WINDOWS
+				// on Windows a path may start with \\?\C:\ or C:\ (where C can be an arbitrary drive letter), but the delimiter is also a colon, so filter out the drive colon
+				static const std::wregex winDrivePrefixRegex(LR"(^(?:\\\\\?\\)?[A-Za-z]:)");
+				std::wsmatch winDrivePrefixMatch;
+				if (std::regex_search(argument, winDrivePrefixMatch, winDrivePrefixRegex))
+					winDriveColonOffset = static_cast<sint32>(winDrivePrefixMatch.length());
+#endif
+				size_t colonLocation = argument.find(L':', winDriveColonOffset);
+				if (colonLocation == std::wstring::npos)
+				{
+					std::cerr << "Argument for a mount expects to be in the format: `path on host:path in emulated system`, was not: `" << boost::nowide::narrow(argument) << "`\n";
+					continue;
+				}
+
+				s_cos_mounts[argument.substr(0, colonLocation)] = argument.substr(colonLocation + 1);
+			}
+		}
+
 		std::wstring extract_path, log_path;
 		std::string output_path;
 		if (vm.count("extract"))
@@ -215,10 +267,10 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 		if(!extract_path.empty())
 		{
 			ExtractorTool(extract_path, output_path, log_path);
-			return false;
+			return 0;
 		}
 
-		return true;
+		return std::nullopt;
 	}
 	catch (const std::exception& ex)
 	{
@@ -226,7 +278,7 @@ bool LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
 		errorMsg.append("Error while trying to parse command line parameter:\n");
 		errorMsg.append(ex.what());
 		std::cout << errorMsg << std::endl;
-		return false;
+		return 1;
 	}
 	
 }

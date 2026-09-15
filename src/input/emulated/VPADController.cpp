@@ -1,9 +1,9 @@
 #include "input/emulated/VPADController.h"
 #include "input/api/Controller.h"
 #include <mutex>
-#if HAS_SDL
+#ifdef HAS_SDL
 #include "input/api/SDL/SDLController.h"
-#endif // HAS_SDL
+#endif
 #include "WindowSystem.h"
 #include "input/InputManager.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -113,14 +113,15 @@ void VPADController::VPADRead(VPADStatus_t& status, const BtnRepeat& repeat)
 
 	// button repeat
 	const auto now = std::chrono::high_resolution_clock::now();
-	if (status.hold != m_last_holdvalue)
+	uint32 currentHold = status.hold;
+	if (currentHold != m_last_holdvalue)
 	{
 		m_last_hold_change = m_last_pulse = now;
 	}
 
 	if (repeat.pulse > 0)
 	{
-		if (m_last_hold_change + std::chrono::milliseconds(repeat.delay) >= now)
+		if (currentHold != 0 && m_last_hold_change + std::chrono::milliseconds(repeat.delay) <= now)
 		{
 			if ((m_last_pulse + std::chrono::milliseconds(repeat.pulse)) < now)
 			{
@@ -131,9 +132,9 @@ void VPADController::VPADRead(VPADStatus_t& status, const BtnRepeat& repeat)
 	}
 
 	// general
-	status.release = m_last_holdvalue & ~status.hold;
-	status.trig = ~m_last_holdvalue & status.hold;
-	m_last_holdvalue = status.hold;
+	status.release = m_last_holdvalue & ~currentHold;
+	status.trig = ~m_last_holdvalue & currentHold;
+	m_last_holdvalue = currentHold;
 
 	// touch
 	update_touch(status);
@@ -512,7 +513,7 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 	std::vector<std::pair<uint64, uint64>> mapping;
 	switch (controller->api())
 	{
-#if HAS_SDL
+#ifdef HAS_SDL
 	case InputAPI::SDLController: {
 		const auto sdl_controller = std::static_pointer_cast<SDLController>(controller);
 		if (sdl_controller->get_guid() == SDLController::kLeftJoyCon)
@@ -636,7 +637,7 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 		}
 		break;
 	}
-#endif // HAS_SDL
+#endif
 	case InputAPI::XInput:
 	{
 		mapping =

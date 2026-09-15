@@ -16,7 +16,7 @@ std::string_view EmulatedController::type_to_string(Type type)
 	case Wiimote: return "Wiimote";
 	}
 
-	throw std::runtime_error(fmt::format("unknown emulated controller: {}", to_underlying(type)));
+	throw std::runtime_error(fmt::format("unknown emulated controller: {}", stdx::to_underlying(type)));
 }
 
 EmulatedController::Type EmulatedController::type_from_string(std::string_view str)
@@ -263,12 +263,12 @@ void EmulatedController::clear_controllers()
 
 float EmulatedController::get_axis_value(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto overriddenAxisMappingIt = m_overriddenAxisMappings.find(mapping);
 	if (overriddenAxisMappingIt != m_overriddenAxisMappings.cend() && overriddenAxisMappingIt->second != 0.0f)
 	{
 		return overriddenAxisMappingIt->second;
 	}
-
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -294,12 +294,12 @@ void EmulatedController::setAxisValue(uint64 mapping, float value)
 
 bool EmulatedController::is_mapping_down(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto overriddenButtonMappingIt = m_overriddenButtonMappings.find(mapping);
 	if (overriddenButtonMappingIt != m_overriddenButtonMappings.cend() && overriddenButtonMappingIt->second)
 	{
 		return true;
 	}
-
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -312,6 +312,7 @@ bool EmulatedController::is_mapping_down(uint64 mapping) const
 
 std::string EmulatedController::get_mapping_name(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -325,6 +326,7 @@ std::string EmulatedController::get_mapping_name(uint64 mapping) const
 
 std::shared_ptr<ControllerBase> EmulatedController::get_mapping_controller(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -338,17 +340,20 @@ std::shared_ptr<ControllerBase> EmulatedController::get_mapping_controller(uint6
 
 void EmulatedController::delete_mapping(uint64 mapping)
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings.erase(mapping);
 }
 
 void EmulatedController::clear_mappings()
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings.clear();
 }
 
 void EmulatedController::set_mapping(uint64 mapping, const std::shared_ptr<ControllerBase>& controller,
                                      uint64 button)
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings[mapping] = { controller, button };
 }
 

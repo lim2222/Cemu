@@ -1,9 +1,6 @@
 #include "Cafe/HW/Latte/Core/LatteConst.h"
-#include "Cafe/HW/Latte/Core/LatteShaderAssembly.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
-#include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
-#include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerInstructions.h"
 #include "Cafe/HW/Latte/Core/FetchShader.h"
@@ -11,11 +8,13 @@
 #include "HW/Latte/Renderer/Renderer.h"
 #include "util/containers/LookupTableL3.h"
 #include "util/helpers/fspinlock.h"
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
 #endif
 #include <openssl/sha.h> /* SHA1_DIGEST_LENGTH */
 #include <openssl/evp.h> /* EVP_Digest */
+
+void LatteSHRC_RemoveShaderStateCacheEntryByKey(uint64 key);
 
 uint32 LatteShaderRecompiler_getAttributeSize(LatteParsedFetchShaderAttribute_t* attrib)
 {
@@ -108,21 +107,28 @@ void LatteShader_calculateFSKey(LatteFetchShader* fetchShader)
 			key = std::rotl<uint64>(key, 8);
 			key += (uint64)attrib->semanticId;
 			key = std::rotl<uint64>(key, 8);
-			if (g_renderer->GetType() == RendererAPI::Metal)
+			switch(g_renderer->GetType())
+			{
+#ifdef ENABLE_METAL
+			case RendererAPI::Metal:
 			{
 			    key += (uint64)attrib->offset;
 				key = std::rotl<uint64>(key, 7);
+				break;
 			}
-			else
+#endif
+			default:
 			{
 				key += (uint64)(attrib->offset & 3);
 				key = std::rotl<uint64>(key, 2);
+				break;
+			}
 			}
 		}
 	}
 	// todo - also hash invalid buffer groups?
 
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	if (g_renderer->GetType() == RendererAPI::Metal)
 	{
 		for (sint32 g = 0; g < fetchShader->bufferGroups.size(); g++)
@@ -171,7 +177,7 @@ void LatteFetchShader::CalculateFetchShaderVkHash()
 	this->vkPipelineHashFragment = h;
 }
 
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 void LatteFetchShader::CheckIfVerticesNeedManualFetchMtl(uint32* contextRegister)
 {
 	for (sint32 g = 0; g < bufferGroups.size(); g++)
@@ -236,6 +242,7 @@ void _fetchShaderDecompiler_parseInstruction_VTX_SEMANTIC(LatteFetchShader* pars
 		else
 			attribGroup = &parsedFetchShader->bufferGroupsInvalid.emplace_back();
 
+		parsedFetchShader->attributeBufferMask |= (1 << bufferIndex);
 		attribGroup->attributeBufferIndex = bufferIndex;
 		attribGroup->minOffset = offset;
 		attribGroup->maxOffset = offset;
@@ -376,7 +383,7 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
 		// these only make sense when vertex shader does not call FS?
 		LatteShader_calculateFSKey(newFetchShader);
 		newFetchShader->CalculateFetchShaderVkHash();
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 		newFetchShader->CheckIfVerticesNeedManualFetchMtl(contextRegister);
 #endif
 		return newFetchShader;
@@ -438,7 +445,7 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
 	}
 	LatteShader_calculateFSKey(newFetchShader);
 	newFetchShader->CalculateFetchShaderVkHash();
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	newFetchShader->CheckIfVerticesNeedManualFetchMtl(contextRegister);
 #endif
 
@@ -463,6 +470,9 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
 LatteFetchShader::~LatteFetchShader()
 {
 	UnregisterInCache();
+	// remove from shader state cache
+	while (!m_shaderStateCacheKeys.empty())
+		LatteSHRC_RemoveShaderStateCacheEntryByKey(m_shaderStateCacheKeys.back());
 }
 
 struct FetchShaderLookupInfo
@@ -496,7 +506,7 @@ LatteFetchShader::CacheHash LatteFetchShader::CalculateCacheHash(void* programCo
 
 LatteFetchShader* LatteFetchShader::FindInCacheByHash(LatteFetchShader::CacheHash fsHash)
 {
-	// does not hold s_fetchShaderCache for better performance. Be careful not to call this while another thread invokes RegisterInCache()
+	// does not hold s_spinlockFetchShaderCache for better performance. Be careful not to call this while another thread invokes RegisterInCache()
 	auto itr = s_fetchShaderByHash.find(fsHash);
 	if (itr == s_fetchShaderByHash.end())
 		return nullptr;
@@ -532,6 +542,11 @@ LatteFetchShader* LatteFetchShader::FindByGPUState()
 		}
 		// update lookup info
 		CacheHash fsHash = CalculateCacheHash(_getFSProgramPtr(), _getFSProgramSize());
+		if (lookupInfo->fetchShader->m_cacheHash == fsHash && lookupInfo->programSize == fsSize) // check if its still the same hash
+		{
+			lookupInfo->lastFrameAccessed = LatteGPUState.frameCounter;
+			return lookupInfo->fetchShader;
+		}
 		LatteFetchShader* fetchShader = FindInCacheByHash(fsHash);
 		if (!fetchShader)
 		{

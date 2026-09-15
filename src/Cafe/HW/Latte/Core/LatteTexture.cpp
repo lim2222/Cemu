@@ -169,6 +169,17 @@ void LatteTexture_UnregisterTextureMemoryOccupancy(LatteTexture* texture)
 	}
 }
 
+void LatteTexture_Invalidate(uint32 physAddr, uint32 size)
+{
+	if (size == 0xFFFFFFFF)
+		return; // full cache invalidation for all textures is too expensive, so for now lets ignore it. Most likely games don't use this anyway when they are modifying a single texture
+	std::vector<LatteTexture*> textures;
+	LatteTC_LookupTexturesByPhysAddr(physAddr, textures);
+	uint32 invalidationVal = LatteGPUState.frameCounter - 1;
+	for (LatteTexture* texture : textures)
+		texture->lastDataUpdateFrameCounter = invalidationVal;
+}
+
 // calculate the actually accessed data range
 // the resulting range is an estimate and may be smaller than the actual slice size (but not larger)
 void LatteTexture_EstimateMipSliceAccessedDataRange(LatteTexture* texture, sint32 sliceIndex, sint32 mipIndex, LatteTextureSliceMipInfo* sliceMipInfo)
@@ -528,7 +539,7 @@ void LatteTexture_UpdateTextureFromDynamicChanges(LatteTexture* texture)
 						LatteTexture_SyncSlice(subTexture, cSliceIndex, cMipIndex, baseTexture, texRel->baseSliceIndex + cSliceIndex, texRel->baseMipIndex + cMipIndex);
 						baseSliceMipInfo->lastDynamicUpdate = subSliceMipInfo->lastDynamicUpdate;
 						if(subTexture->isUpdatedOnGPU)
-							texture->isUpdatedOnGPU = true;
+							LatteTC_FlagSliceAsGPUUpdated(texture, baseSliceMipInfo->sliceIndex, baseSliceMipInfo->mipIndex);
 					}
 				}
 				else
@@ -539,7 +550,7 @@ void LatteTexture_UpdateTextureFromDynamicChanges(LatteTexture* texture)
 						LatteTexture_SyncSlice(baseTexture, texRel->baseSliceIndex + cSliceIndex, texRel->baseMipIndex + cMipIndex, subTexture, cSliceIndex, cMipIndex);
 						subSliceMipInfo->lastDynamicUpdate = baseSliceMipInfo->lastDynamicUpdate;
 						if (baseTexture->isUpdatedOnGPU)
-							texture->isUpdatedOnGPU = true;
+							LatteTC_FlagSliceAsGPUUpdated(texture, subSliceMipInfo->sliceIndex, subSliceMipInfo->mipIndex);
 					}
 				}
 			}
@@ -567,6 +578,8 @@ bool __LatteTexture_IsBlockedFormatRelation(LatteTexture* texture1, LatteTexture
 		if (texture1->format == Latte::E_GX2SURFFMT::D32_FLOAT && Latte::GetHWFormat(texture2->format) == Latte::E_HWSURFFMT::HWFMT_8_8_8_8)
 			return true;
 	}
+
+#ifdef ENABLE_VULKAN
 	// Vulkan has stricter rules
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	{
@@ -574,6 +587,7 @@ bool __LatteTexture_IsBlockedFormatRelation(LatteTexture* texture1, LatteTexture
 		if (texture1->format == Latte::E_GX2SURFFMT::D32_FLOAT && Latte::GetHWFormat(texture2->format) == Latte::E_HWSURFFMT::HWFMT_8_24)
 			return true;
 	}
+#endif
 
 	return false;
 }
@@ -953,7 +967,7 @@ void LatteTexture_RecreateTextureWithDifferentMipSliceCount(LatteTexture* textur
 	if (texture->isUpdatedOnGPU)
 	{
 		LatteTexture_copyData(texture, view->baseTexture, texture->mipLevels, texture->depth);
-		view->baseTexture->isUpdatedOnGPU = true;
+		LatteTC_FlagSliceAsGPUUpdated(view->baseTexture, view->firstSlice, view->firstMip);
 	}
 	// remove old texture
 	LatteTexture_Delete(texture);
@@ -1138,6 +1152,7 @@ void LatteTC_LookupTexturesByPhysAddr(MPTR physAddr, std::vector<LatteTexture*>&
 	}
 }
 
+// return or create a view, requires existing base texture. Returns nullptr if it doesn't exist yet
 LatteTextureView* LatteTC_GetTextureSliceViewOrTryCreate(MPTR srcImagePtr, MPTR srcMipPtr, Latte::E_GX2SURFFMT srcFormat, Latte::E_HWTILEMODE srcTileMode, uint32 srcWidth, uint32 srcHeight, uint32 srcDepth, uint32 srcPitch, uint32 srcSwizzle, uint32 srcSlice, uint32 srcMip, const bool requireExactResolution)
 {
 	LatteTextureView* sourceView;
@@ -1361,17 +1376,14 @@ void LatteTexture_MarkConnectedTexturesForReloadFromDynamicTextures(LatteTexture
 {
 	for (auto& it : texture->list_compatibleRelations)
 	{
-		if (texture == it->baseTexture)
-			it->subTexture->reloadFromDynamicTextures = true;
-		else
-			it->baseTexture->reloadFromDynamicTextures = true;
+		LatteTexture* connectedTexture = (texture == it->baseTexture) ? it->subTexture : it->baseTexture;
+		connectedTexture->reloadFromDynamicTextures = true;
 	}
 }
 
 void LatteTexture_TrackTextureGPUWrite(LatteTexture* texture, uint32 slice, uint32 mip, uint64 eventCounter)
 {
 	LatteTexture_MarkDynamicTextureAsChanged(texture->baseView, slice, mip, eventCounter);
-	LatteTC_ResetTextureChangeTracker(texture);
-	texture->isUpdatedOnGPU = true;
+	LatteTC_FlagSliceAsGPUUpdated(texture, slice, mip);
 	texture->lastUnflushedRTDrawcallIndex = LatteGPUState.drawCallCounter;
 }

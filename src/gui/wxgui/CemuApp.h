@@ -3,6 +3,8 @@
 #include <wx/app.h>
 
 class MainWindow;
+class wxTimer;
+class wxTimerEvent;
 
 class CemuApp : public wxApp
 {
@@ -21,6 +23,8 @@ public:
 
 	static void InitializeNewMLCOrFail(fs::path mlc);
 	static void InitializeExistingMLCOrFail(fs::path mlc);
+
+	void RequestRestart(fs::path executablePath);
 private:
 	void LocalizeUI(wxLanguage languageToUse);
 
@@ -30,9 +34,14 @@ private:
 	static std::vector<const wxLanguageInfo*> GetAvailableTranslationLanguages(wxTranslations* translationsMgr);
 
 	MainWindow* m_mainFrame = nullptr;
+#if BOOST_OS_MACOS
+	void OnSDLEventPumpTimer(wxTimerEvent& event);
+	wxTimer* m_sdlEventPumpTimer = nullptr;
+#endif
 
 	wxLocale m_locale;
 	std::vector<const wxLanguageInfo*> m_availableTranslations;
+	std::optional<fs::path> m_restartExecutable;
 };
 
 wxDECLARE_APP(CemuApp);

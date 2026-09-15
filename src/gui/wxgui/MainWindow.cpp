@@ -1,78 +1,67 @@
-#include "Cafe/HW/Latte/Renderer/Renderer.h"
-#include "interface/WindowSystem.h"
-#include "wxCemuConfig.h"
-#include "wxgui/wxgui.h"
-#include "wxgui/MainWindow.h"
+#include "MainWindow.h"
 
-#include <wx/mstream.h>
-
-#include "wxgui/GameUpdateWindow.h"
-#include "wxgui/PadViewFrame.h"
-#include "wxgui/windows/TextureRelationViewer/TextureRelationWindow.h"
-#include "wxgui/windows/PPCThreadsViewer/DebugPPCThreadsWindow.h"
+// subwindows
+#include "TitleManager.h"
+#include "GeneralSettings2.h"
+#include "GameUpdateWindow.h"
+#include "CemuUpdateWindow.h"
+#include "GraphicPacksWindow2.h"
 #include "AudioDebuggerWindow.h"
-#include "wxgui/canvas/OpenGLCanvas.h"
-#include "wxgui/canvas/VulkanCanvas.h"
-#if ENABLE_METAL
-#include "wxgui/canvas/MetalCanvas.h"
-#endif
-#include "Cafe/OS/libs/nfc/nfc.h"
-#include "Cafe/OS/libs/swkbd/swkbd.h"
-#include "wxgui/debugger/DebuggerWindow2.h"
-#include "util/helpers/helpers.h"
-#include "config/CemuConfig.h"
-#include "Cemu/DiscordPresence/DiscordPresence.h"
-#include "util/ScreenSaver/ScreenSaver.h"
-#include "wxgui/GeneralSettings2.h"
-#include "wxgui/GraphicPacksWindow2.h"
-#include "wxgui/CemuApp.h"
-#include "wxgui/CemuUpdateWindow.h"
-#include "wxgui/LoggingWindow.h"
-#include "config/ActiveSettings.h"
-#include "config/LaunchSettings.h"
+#include "input/InputSettings2.h"
+#include "input/HotkeySettings.h"
+#include "debugger/DebuggerWindow2.h"
+#include "EmulatedUSBDevices/EmulatedUSBDeviceFrame.h"
+#include "windows/PPCThreadsViewer/DebugPPCThreadsWindow.h"
+#include "windows/TextureRelationViewer/TextureRelationWindow.h"
 
-#include "Cafe/Filesystem/FST/FST.h"
-
-#include "wxgui/TitleManager.h"
-#include "wxgui/EmulatedUSBDevices/EmulatedUSBDeviceFrame.h"
-
-#include "Cafe/CafeSystem.h"
-
-#include "util/helpers/SystemException.h"
-#include "wxgui/DownloadGraphicPacksWindow.h"
-#include "wxgui/GettingStartedDialog.h"
-#include "wxgui/helpers/wxHelpers.h"
-#include "Cafe/HW/Latte/Renderer/Vulkan/VsyncDriver.h"
-#include "wxgui/input/InputSettings2.h"
-#include "wxgui/input/HotkeySettings.h"
-#include "input/InputManager.h"
-
-#if BOOST_OS_WINDOWS
-#define exit(__c) ExitProcess(__c)
-#else
-#define exit(__c) _Exit(__c)
-#endif
+//wxgui + misc.
+#include "wxgui.h"
+#include "wxCemuConfig.h"
+#include "interface/WindowSystem.h"
+#include "wxHelper.h"
+#include "helpers/wxHelpers.h"
+#include "PadViewFrame.h"
 
 #if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
 #include "resource/embedded/resources.h"
 #endif
 
-#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) && HAS_WAYLAND
-#include "wxgui/helpers/wxWayland.h"
-#endif
+// settings
+#include "config/CemuConfig.h"
+#include "config/LaunchSettings.h"
+#include "config/ActiveSettings.h"
 
-//GameMode support
+// External functionality headers
+#include "input/InputManager.h"
+#include "Cafe/TitleList/TitleList.h"
+#include "Cemu/DiscordPresence/DiscordPresence.h"
+#include "util/ScreenSaver/ScreenSaver.h"
+#include "util/helpers/SystemException.h"
+#include "Cafe/HW/Latte/Renderer/Vulkan/VsyncDriver.h"
 #if BOOST_OS_LINUX && defined(ENABLE_FERAL_GAMEMODE)
-#include "gamemode_client.h"
+#include <gamemode_client.h>
+#endif
+#if ( BOOST_OS_LINUX || BOOST_OS_BSD ) && HAS_WAYLAND
+#include "helpers/wxWayland.h"
 #endif
 
-#if ENABLE_METAL
+// Renderer Canvasses
+#ifdef ENABLE_OPENGL
+#include "canvas/OpenGLCanvas.h"
+#endif
+#ifdef ENABLE_VULKAN
+#include "canvas/VulkanCanvas.h"
+#endif
+#ifdef ENABLE_METAL
+#include "canvas/MetalCanvas.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #endif
 
-#include "Cafe/TitleList/TitleInfo.h"
-#include "Cafe/TitleList/TitleList.h"
-#include "wxHelper.h"
+//Cafe libs
+#include "Cafe/OS/libs/nfc/nfc.h"
+#include "Cafe/OS/libs/swkbd/swkbd.h"
+
+#include "Cafe/HW/Latte/Renderer/Renderer.h" // For renderer API checks
 
 extern WindowSystem::WindowInfo g_window_info;
 extern std::shared_mutex g_mutex;
@@ -160,6 +149,7 @@ enum
 	MAINFRAME_MENU_ID_DEBUG_DUMP_SHADERS,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_RECOMPILER_FUNCTIONS,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_RAM,
+	MAINFRAME_MENU_ID_DEBUG_DUMP_RPX,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_FST,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_CURL_REQUESTS,
 	// help
@@ -173,6 +163,7 @@ wxDEFINE_EVENT(wxEVT_SET_WINDOW_TITLE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_GAMELIST_REFRESH, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_LAUNCH_GAME, wxLaunchGameEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_RECREATE_CANVAS, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_REQUEST_GAME_EXIT, wxCommandEvent);
 
 wxBEGIN_EVENT_TABLE(MainWindow, wxFrame)
 EVT_TIMER(MAINFRAME_ID_TIMER1, MainWindow::OnTimer)
@@ -234,6 +225,7 @@ EVT_MENU(MAINFRAME_MENU_ID_DEBUG_AUDIO_AUX_ONLY, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_VK_ACCURATE_BARRIERS, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_GPU_CAPTURE, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_RAM, MainWindow::OnDebugSetting)
+EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_RPX, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_FST, MainWindow::OnDebugSetting)
 // debug -> View ...
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_VIEW_LOGGING_WINDOW, MainWindow::OnLoggingWindow)
@@ -252,8 +244,8 @@ EVT_COMMAND(wxID_ANY, wxEVT_GAMELIST_BEGIN_UPDATE, MainWindow::OnGameListBeginUp
 EVT_COMMAND(wxID_ANY, wxEVT_GAMELIST_END_UPDATE, MainWindow::OnGameListEndUpdate)
 EVT_COMMAND(wxID_ANY, wxEVT_ACCOUNTLIST_REFRESH, MainWindow::OnAccountListRefresh)
 EVT_COMMAND(wxID_ANY, wxEVT_SET_WINDOW_TITLE, MainWindow::OnSetWindowTitle)
-
 EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_RECREATE_CANVAS, MainWindow::OnRequestRecreateCanvas)
+EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_GAME_EXIT, MainWindow::OnRequestGameExit)
 
 wxEND_EVENT_TABLE()
 
@@ -386,6 +378,9 @@ MainWindow::MainWindow()
 	{
 			g_gdbstub = std::make_unique<GDBServer>(GetConfig().gdb_port);
 	}
+
+	if (LaunchSettings::OpenDebuggerEnabled())
+		OpenPPCDebugger();
 }
 
 MainWindow::~MainWindow()
@@ -443,6 +438,12 @@ wxString MainWindow::GetInitialWindowTitle()
 
 void MainWindow::OnClose(wxCloseEvent& event)
 {
+	if (m_debugger_window)
+	{
+		m_debugger_window->CleanupForDestroy();
+		m_debugger_window->Destroy();
+		m_debugger_window = nullptr;
+	}
 
 	if(m_game_list)
 		m_game_list->OnClose(event);
@@ -553,8 +554,7 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
 			return false;
 		}
-		else if (initiatedBy == wxLaunchGameEvent::INITIATED_BY::MENU ||
-			initiatedBy == wxLaunchGameEvent::INITIATED_BY::COMMAND_LINE)
+		else
 		{
 			wxString t = _("Unable to launch game\nPath:\n");
 			t.append(_pathToUtf8(launchPath));
@@ -568,13 +568,6 @@ bool MainWindow::FileLoad(const fs::path launchPath, wxLaunchGameEvent::INITIATE
 				t.append("\n\n");
 				t.append(_("Could not decrypt title because title.tik is missing."));
 			}
-			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
-			return false;
-		}
-		else
-		{
-			wxString t = _("Unable to launch game\nPath:\n");
-			t.append(_pathToUtf8(launchPath));
 			wxMessageBox(t, _("Error"), wxOK | wxCENTRE | wxICON_ERROR);
 			return false;
 		}
@@ -1037,7 +1030,7 @@ void MainWindow::OnDebugSetting(wxCommandEvent& event)
 		if(!GetConfig().vk_accurate_barriers)
 			wxMessageBox(_("Warning: Disabling the accurate barriers option will lead to flickering graphics but may improve performance. It is highly recommended to leave it turned on."), _("Accurate barriers are off"), wxOK);
 	}
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_GPU_CAPTURE)
 	{
 		cemu_assert_debug(g_renderer->GetType() == RendererAPI::Metal);
@@ -1048,6 +1041,8 @@ void MainWindow::OnDebugSetting(wxCommandEvent& event)
 		ActiveSettings::EnableAudioOnlyAux(event.IsChecked());
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_RAM)
 		memory_createDump();
+	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_RPX)
+		CafeSystem::DumpCurrentRPX();
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_FST)
 	{
 		/*	int msgBoxAnswer = wxMessageBox(_("All files from the currently running game will be dumped to /dump/<gamefolder>. This process can take a few minutes."),
@@ -1200,6 +1195,14 @@ void MainWindow::OnDebugViewPPCDebugger(wxCommandEvent& event)
 		m_debugger_window = nullptr;
 		return;
 	}
+
+	OpenPPCDebugger();
+}
+
+void MainWindow::OpenPPCDebugger()
+{
+	if (m_debugger_window)
+		return;
 
 	auto rect = GetDesktopRect();
 	/*
@@ -1601,14 +1604,21 @@ void MainWindow::CreateCanvas()
     this->GetSizer()->Add(m_game_panel, 1, wxEXPAND);
 
     // create canvas
-    if (ActiveSettings::GetGraphicsAPI() == kVulkan)
-		m_render_canvas = new VulkanCanvas(m_game_panel, wxSize(1280, 720), true);
-	else if (ActiveSettings::GetGraphicsAPI() == kOpenGL)
+	#ifdef ENABLE_OPENGL
+	if (ActiveSettings::GetGraphicsAPI() == kOpenGL)
 		m_render_canvas = GLCanvas_Create(m_game_panel, wxSize(1280, 720), true);
-#if ENABLE_METAL
-	else
-	    m_render_canvas = new MetalCanvas(m_game_panel, wxSize(1280, 720), true);
-#endif
+	#endif
+	#ifdef ENABLE_VULKAN
+	if (ActiveSettings::GetGraphicsAPI() == kVulkan)
+		m_render_canvas = new VulkanCanvas(m_game_panel, wxSize(1280, 720), true);
+	#endif
+	#ifdef ENABLE_METAL
+	if (ActiveSettings::GetGraphicsAPI() == kMetal)
+		m_render_canvas = new MetalCanvas(m_game_panel, wxSize(1280, 720), true);
+	#endif
+	if (!m_render_canvas)
+		cemu_assert(false && "Failed to create canvas or invalid graphics API selected");
+	cemu_assert(m_render_canvas != nullptr);
 
 	// mouse events
 	m_render_canvas->Bind(wxEVT_MOTION, &MainWindow::OnMouseMove, this);
@@ -1670,7 +1680,9 @@ void MainWindow::OnSizeEvent(wxSizeEvent& event)
 
 	event.Skip();
 
+	#ifdef ENABLE_VULKAN
 	VsyncDriver_notifyWindowPosChanged();
+	#endif
 }
 
 void MainWindow::OnDPIChangedEvent(wxDPIChangedEvent& event)
@@ -1691,7 +1703,9 @@ void MainWindow::OnMove(wxMoveEvent& event)
 
 	if (m_debugger_window && m_debugger_window->IsShown())
 		m_debugger_window->OnParentMove(GetPosition(), GetSize());
+	#ifdef ENABLE_VULKAN
 	VsyncDriver_notifyWindowPosChanged();
+	#endif
 }
 
 void MainWindow::OnDebuggerClose(wxCloseEvent& event)
@@ -1790,7 +1804,9 @@ void MainWindow::SetMenuVisible(bool state)
 	if (m_menu_visible == state)
 		return;
 
+#if !BOOST_OS_MACOS // on macOS hiding the menu seems to cause issues (see #609)
 	SetMenuBar(state ? m_menuBar : nullptr);
+#endif
 	m_menu_visible = state;
 }
 
@@ -2311,6 +2327,7 @@ void MainWindow::RecreateMenu()
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::Socket), _("nsysnet API"))->Check(cemuLog_isLoggingEnabled(LogType::Socket));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::H264), _("h264 API"))->Check(cemuLog_isLoggingEnabled(LogType::H264));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::GX2), _("gx2 API"))->Check(cemuLog_isLoggingEnabled(LogType::GX2));
+	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::SWKBD), _("swkbd API"))->Check(cemuLog_isLoggingEnabled(LogType::SWKBD));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::SoundAPI), _("Audio API"))->Check(cemuLog_isLoggingEnabled(LogType::SoundAPI));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::InputAPI), _("Input API"))->Check(cemuLog_isLoggingEnabled(LogType::InputAPI));
 
@@ -2345,7 +2362,7 @@ void MainWindow::RecreateMenu()
 	auto accurateBarriers = debugMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_VK_ACCURATE_BARRIERS, _("&Accurate barriers (Vulkan)"));
 	accurateBarriers->Check(GetConfig().vk_accurate_barriers);
 
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	auto gpuCapture = debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_GPU_CAPTURE, _("&GPU capture (Metal)"));
 	gpuCapture->Enable(m_game_launched && g_renderer->GetType() == RendererAPI::Metal);
 #endif
@@ -2366,7 +2383,8 @@ void MainWindow::RecreateMenu()
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_VIEW_PPC_DEBUGGER, _("&View PPC debugger"));
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_VIEW_AUDIO_DEBUGGER, _("&View audio debugger"));
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_VIEW_TEXTURE_RELATIONS, _("&View texture cache info"));
-	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_RAM, _("&Dump current RAM"));
+	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_RAM, _("&Dump current RAM"))->Enable(m_game_launched);
+	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_RPX, _("&Dump current RPX"))->Enable(m_game_launched);
 	// debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_FST, _("&Dump WUD filesystem"))->Enable(false);
 
 	m_menuBar->Append(debugMenu, _("&Debug"));
@@ -2469,6 +2487,27 @@ void MainWindow::CafeRecreateCanvas()
 	evt->SetClientData((void*)&sem);
 	wxQueueEvent(g_mainFrame, evt);
 	sem.decrementWithWait();
+}
+
+void MainWindow::CafePPCProcessExit()
+{
+	// this is called from the emulated PPC thread, so queue an event instead of handling it directly
+	wxQueueEvent(g_mainFrame, new wxCommandEvent(wxEVT_REQUEST_GAME_EXIT));
+}
+
+void MainWindow::OnRequestGameExit(wxCommandEvent& event)
+{
+	// if the title was launched via the command line we close Cemu and use the foreground title's exit status as Cemu's process return code (via CemuApp:OnExit)
+	// this is useful for homebrew testing setups that use Cemu via CLI
+	// otherwise the title was launched from the game list, so we just stop it and return to the game list instead of closing Cemu
+	if (LaunchSettings::GetLoadFile() || LaunchSettings::GetLoadTitleID())
+	{
+		Close();
+	}
+	else
+	{
+		EndEmulation();
+	}
 }
 
 bool MainWindow::FullscreenEnabled() const
