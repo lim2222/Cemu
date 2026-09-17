@@ -45,7 +45,7 @@ android {
     compileSdk = 36
     ndkVersion = "29.0.14206865"
     defaultConfig {
-        applicationId = "info.cemu.cemu"
+        applicationId = "info.cemu.taiko"
         minSdk = 30
         targetSdk = 35
         versionName = getVersionName()
@@ -120,6 +120,7 @@ android {
                     "-DBUNDLE_SPEEX=ON",
                     "-DENABLE_DISCORD_RPC=OFF",
                     "-DENABLE_NSYSHID_LIBUSB=OFF",
+					"-DENABLE_LIBUSB=OFF",
                     "-DENABLE_WAYLAND=OFF",
                     "-DENABLE_HIDAPI=OFF"
                 )
