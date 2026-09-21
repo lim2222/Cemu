@@ -107,12 +107,23 @@ object NativeInput {
         const val NUNCHUCK_RIGHT: Int = 16
         const val HOME: Int = 17
     }
-
+	object TaikoButton {
+		const val DON_LEFT: Int = 1
+		const val DON_RIGHT: Int = 2
+		const val KA_LEFT: Int = 3
+		const val KA_RIGHT: Int = 4
+		const val PLUS: Int = 5
+		const val MINUS: Int = 6
+		const val ONE: Int = 7
+		const val TWO: Int = 8
+	}
+	
     object EmulatedControllerType {
         const val VPAD: Int = 0
         const val PRO: Int = 1
         const val CLASSIC: Int = 2
         const val WIIMOTE: Int = 3
+		const val TAIKO: Int = 4
         const val DISABLED: Int = -1
     }
 

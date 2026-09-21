@@ -32,7 +32,7 @@ abstract class Input protected constructor(
 
     abstract fun onTouch(event: MotionEvent): Boolean
 
-    fun moveInput(x: Int, y: Int, maxWidth: Int, maxHeight: Int) {
+    open fun moveInput(x: Int, y: Int, maxWidth: Int, maxHeight: Int) {
         val width = rect.width()
         val height = rect.height()
         val left = min(
@@ -52,7 +52,7 @@ abstract class Input protected constructor(
         configure()
     }
 
-    fun resize(diffX: Int, diffY: Int, maxWidth: Int, maxHeight: Int, minWidthHeight: Int) {
+    open fun resize(diffX: Int, diffY: Int, maxWidth: Int, maxHeight: Int, minWidthHeight: Int) {
         val newRight = rect.right + diffX
         val newBottom = rect.bottom + diffY
         if (newRight - rect.left < minWidthHeight

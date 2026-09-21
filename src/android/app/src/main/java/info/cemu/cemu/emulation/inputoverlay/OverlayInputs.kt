@@ -37,6 +37,12 @@ enum class OverlayDpad : OverlayInput {
     DPAD_UP;
 }
 
+enum class OverlayTaiko : OverlayInput {
+	DON_LEFT,
+	DON_RIGHT,
+	KA_LEFT,
+	KA_RIGHT,
+}
 fun OverlayInput.toConfig(): OverlayInputConfig = when (this) {
     is OverlayButton -> when (this) {
         OverlayButton.A -> OverlayInputConfig.BUTTON_A
@@ -65,4 +71,11 @@ fun OverlayInput.toConfig(): OverlayInputConfig = when (this) {
     }
 
     is OverlayDpad -> OverlayInputConfig.DPAD
+	
+	is OverlayTaiko -> when (this) {
+		OverlayTaiko.DON_LEFT -> OverlayInputConfig.TAIKO_DON_LEFT
+		OverlayTaiko.DON_RIGHT -> OverlayInputConfig.TAIKO_DON_RIGHT
+		OverlayTaiko.KA_LEFT -> OverlayInputConfig.TAIKO_KA_LEFT
+		OverlayTaiko.KA_RIGHT -> OverlayInputConfig.TAIKO_KA_RIGHT
+	}
 }

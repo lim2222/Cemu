@@ -14,6 +14,7 @@ enum WPADDeviceType
 	kWAPDevMPLS = 5,
 	kWAPDevMPLSFreeStyle = 6,
 	kWAPDevMPLSClassic = 7,
+	kWAPDevTaiko = 19,
 	kWAPDevURCC = 31,
 	kWAPDevNotFound = 253,
 	kWAPDevUnknown = 255,
@@ -138,6 +139,7 @@ protected:
 
 private:
 	uint32be m_last_holdvalue = 0;
+	uint32be m_last_core_holdvalue = 0;
 
 	std::chrono::steady_clock::time_point m_last_hold_change{}, m_last_pulse{};
 

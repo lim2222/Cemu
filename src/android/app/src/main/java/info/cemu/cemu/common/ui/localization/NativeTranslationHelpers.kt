@@ -21,5 +21,6 @@ fun controllerTypeToString(type: Int) = when (type) {
     EmulatedControllerType.PRO -> tr("Wii U Pro Controller")
     EmulatedControllerType.WIIMOTE -> tr("Wiimote")
     EmulatedControllerType.CLASSIC -> tr("Wii U Classic Controller")
+	EmulatedControllerType.TAIKO -> tr("Taiko Drum Controller")
     else -> throw IllegalArgumentException("Invalid controller type: $type")
 }

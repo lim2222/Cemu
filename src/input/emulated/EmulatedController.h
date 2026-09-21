@@ -29,6 +29,7 @@ public:
 		Pro,
 		Classic,
 		Wiimote,
+		Taiko,
 
 		MAX
 	};

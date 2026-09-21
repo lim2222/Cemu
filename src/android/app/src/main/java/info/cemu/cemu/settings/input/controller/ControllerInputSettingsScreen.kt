@@ -71,6 +71,7 @@ import info.cemu.cemu.settings.input.controller.emulatedcontroller.ClassicContro
 import info.cemu.cemu.settings.input.controller.emulatedcontroller.ProControllerInputs
 import info.cemu.cemu.settings.input.controller.emulatedcontroller.VPADInputs
 import info.cemu.cemu.settings.input.controller.emulatedcontroller.WiimoteControllerInputs
+import info.cemu.cemu.settings.input.controller.emulatedcontroller.TaikoControllerInputs
 
 @Composable
 fun ControllerInputSettingsScreen(
@@ -129,7 +130,8 @@ fun ControllerInputSettingsScreen(
                 EmulatedControllerType.VPAD,
                 EmulatedControllerType.PRO,
                 EmulatedControllerType.CLASSIC,
-                EmulatedControllerType.WIIMOTE
+                EmulatedControllerType.WIIMOTE,
+				EmulatedControllerType.TAIKO
             ),
             choiceToString = { controllerTypeToString(it) },
             onChoiceChanged = viewModel::setControllerType
@@ -177,6 +179,12 @@ fun ControllerInputSettingsScreen(
             )
 
             EmulatedControllerType.WIIMOTE -> WiimoteControllerInputs(
+                onInputClick = ::onInputClick,
+                onInputLongClick = ::onInputLongClick,
+                controlsMapping = controls,
+            )
+			
+			EmulatedControllerType.TAIKO -> TaikoControllerInputs(
                 onInputClick = ::onInputClick,
                 onInputLongClick = ::onInputLongClick,
                 controlsMapping = controls,

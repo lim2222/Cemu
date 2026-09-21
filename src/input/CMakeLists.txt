@@ -31,6 +31,8 @@ add_library(CemuInput
 	emulated/VPADController.h
 	emulated/ClassicController.cpp
 	emulated/ClassicController.h
+	emulated/TaikoController.cpp
+	emulated/TaikoController.h	
 )
 
 set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

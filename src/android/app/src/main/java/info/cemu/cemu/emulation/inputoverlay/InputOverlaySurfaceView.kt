@@ -1,6 +1,8 @@
 package info.cemu.cemu.emulation.inputoverlay
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.VibrationEffect
@@ -25,6 +27,7 @@ import info.cemu.cemu.emulation.inputoverlay.inputs.Input
 import info.cemu.cemu.emulation.inputoverlay.inputs.Joystick
 import info.cemu.cemu.emulation.inputoverlay.inputs.RectangleButton
 import info.cemu.cemu.emulation.inputoverlay.inputs.RoundButton
+import info.cemu.cemu.emulation.inputoverlay.inputs.TaikoDrum
 import info.cemu.cemu.emulation.inputoverlay.inputs.innerdrawing.BlowButtonInnerDrawing
 import info.cemu.cemu.emulation.inputoverlay.inputs.innerdrawing.ButtonInnerDrawing
 import info.cemu.cemu.emulation.inputoverlay.inputs.innerdrawing.HomeButtonInnerDrawing
@@ -53,8 +56,6 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
     private var overlyButtonToNativeButton: (OverlayInput) -> Int = { _ -> -1 }
     private var inputs: MutableList<Pair<OverlayInput, Input>> = mutableListOf()
     private val vibrator: Vibrator = context.getDeviceVibrator()
-    private val buttonTouchVibrationEffect =
-        VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
     private val inputsMinSize: Int
     private val isVisible: Boolean
         get() = visibility == VISIBLE
@@ -64,7 +65,9 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
     private val currentAlpha get() = settings.alpha
     private val isVibrateOnTouchEnabled: Boolean
         get() = settings.isVibrateOnTouchEnabled && vibrator.hasVibrator()
-
+	private val vibrationAmplitude: Int
+		get() = settings.vibrationAmplitude
+		
     init {
         visibility = GONE
 
@@ -206,6 +209,20 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
             else -> -1
         }
     }
+	
+	private fun overlayButtonToTaikoButton(button: OverlayInput): Int {
+		return when (button) {
+			OverlayTaiko.DON_LEFT -> NativeInput.TaikoButton.DON_LEFT
+			OverlayTaiko.DON_RIGHT -> NativeInput.TaikoButton.DON_RIGHT
+			OverlayTaiko.KA_LEFT -> NativeInput.TaikoButton.KA_LEFT
+			OverlayTaiko.KA_RIGHT -> NativeInput.TaikoButton.KA_RIGHT
+			OverlayButton.ONE -> NativeInput.TaikoButton.ONE
+			OverlayButton.TWO -> NativeInput.TaikoButton.TWO
+			OverlayButton.PLUS -> NativeInput.TaikoButton.PLUS
+			OverlayButton.MINUS -> NativeInput.TaikoButton.MINUS
+			else -> -1
+		}
+	}
 
     private fun onButtonStateChange(button: OverlayInput, state: Boolean) {
         val nativeButtonId = overlyButtonToNativeButton(button)
@@ -215,8 +232,8 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
         }
 
         if (isVibrateOnTouchEnabled && state) {
-            vibrator.vibrate(buttonTouchVibrationEffect)
-        }
+			vibrator.vibrate(VibrationEffect.createOneShot(100L, vibrationAmplitude))
+		}
 
         onOverlayButton(controllerIndex, nativeButtonId, state)
     }
@@ -359,7 +376,19 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
             )
         )
     }
-
+	
+	private fun MutableList<Pair<OverlayInput, Input>>.addTaikoDrum() {
+		val drumBitmap = BitmapFactory.decodeResource(resources, R.drawable.tatacon)
+		add(
+			OverlayTaiko.DON_LEFT to TaikoDrum(
+				::onButtonStateChange,
+				currentAlpha,
+				getBoundingRectangleForInput(OverlayTaiko.DON_LEFT),
+				drumBitmap,
+			)
+		)
+	}
+	
     private fun MutableList<Pair<OverlayInput, Input>>.addRectangleButton(
         button: OverlayButton,
         buttonText: String = button.name,
@@ -386,6 +415,7 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
             NativeInput.EmulatedControllerType.CLASSIC -> ::overlayButtonToClassicButton
             NativeInput.EmulatedControllerType.PRO -> ::overlayButtonToProButton
             NativeInput.EmulatedControllerType.WIIMOTE -> ::overlayButtonToWiimoteButton
+			NativeInput.EmulatedControllerType.TAIKO -> ::overlayButtonToTaikoButton
             else -> { _ -> -1 }
         }
         onJoystickChange = when (nativeControllerType) {
@@ -397,37 +427,62 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
         }
 
         inputs = mutableListOf<Pair<OverlayInput, Input>>().apply {
-            addRoundButton(OverlayButton.MINUS, "-")
-            addRoundButton(OverlayButton.PLUS, "+")
-            addDpad()
-            addRoundButton(OverlayButton.A)
-            addRoundButton(OverlayButton.B)
-            addJoystick(OverlayJoystick.RIGHT)
-            if (nativeControllerType != NativeInput.EmulatedControllerType.WIIMOTE) {
-                addRoundButton(OverlayButton.X)
-                addRoundButton(OverlayButton.Y)
-                addRectangleButton(OverlayButton.ZL)
-                addRectangleButton(OverlayButton.ZR)
-                addRectangleButton(OverlayButton.L)
-                addRectangleButton(OverlayButton.R)
-                addJoystick(OverlayJoystick.LEFT)
-            }
-            if (nativeControllerType == NativeInput.EmulatedControllerType.WIIMOTE) {
+            if (nativeControllerType == NativeInput.EmulatedControllerType.TAIKO) {
+                addRoundButton(OverlayButton.MINUS, "-")
+                addRoundButton(OverlayButton.PLUS, "+")
                 addRoundButton(OverlayButton.ONE, "1")
                 addRoundButton(OverlayButton.TWO, "2")
-                addRoundButton(OverlayButton.C)
-                addRectangleButton(OverlayButton.Z)
-                addRoundButton(OverlayButton.HOME, HomeButtonInnerDrawing())
-            }
-            if (nativeControllerType != NativeInput.EmulatedControllerType.CLASSIC && nativeControllerType != NativeInput.EmulatedControllerType.WIIMOTE) {
-                addRoundButton(OverlayButton.L_STICK_CLICK, "L3")
-                addRoundButton(OverlayButton.R_STICK_CLICK, "R3")
-            }
 
-            if (nativeControllerType == NativeInput.EmulatedControllerType.VPAD) {
-                addRoundButton(OverlayButton.BLOW_MIC, BlowButtonInnerDrawing())
-            }
+                val excludeRects = listOf(
+                    getBoundingRectangleForInput(OverlayButton.MINUS),
+                    getBoundingRectangleForInput(OverlayButton.PLUS),
+                    getBoundingRectangleForInput(OverlayButton.ONE),
+                    getBoundingRectangleForInput(OverlayButton.TWO),
+                )
 
+                val drumBitmap = BitmapFactory.decodeResource(resources, R.drawable.tatacon)
+                add(
+                    OverlayTaiko.DON_LEFT to TaikoDrum(
+                        ::onButtonStateChange,
+                        currentAlpha,
+                        getBoundingRectangleForInput(OverlayTaiko.DON_LEFT),
+                        drumBitmap,
+                        excludeRects,
+                    )
+                )
+            } else {
+                addRoundButton(OverlayButton.MINUS, "-")
+                addRoundButton(OverlayButton.PLUS, "+")
+                addDpad()
+                addRoundButton(OverlayButton.A)
+                addRoundButton(OverlayButton.B)
+                addJoystick(OverlayJoystick.RIGHT)
+                if (nativeControllerType != NativeInput.EmulatedControllerType.WIIMOTE) {
+                    addRoundButton(OverlayButton.X)
+                    addRoundButton(OverlayButton.Y)
+                    addRectangleButton(OverlayButton.ZL)
+                    addRectangleButton(OverlayButton.ZR)
+                    addRectangleButton(OverlayButton.L)
+                    addRectangleButton(OverlayButton.R)
+                    addJoystick(OverlayJoystick.LEFT)
+                }
+                if (nativeControllerType == NativeInput.EmulatedControllerType.WIIMOTE) {
+                    addRoundButton(OverlayButton.ONE, "1")
+                    addRoundButton(OverlayButton.TWO, "2")
+                    addRoundButton(OverlayButton.C)
+                    addRectangleButton(OverlayButton.Z)
+                    addRoundButton(OverlayButton.HOME, HomeButtonInnerDrawing())
+                }
+                if (nativeControllerType != NativeInput.EmulatedControllerType.CLASSIC && nativeControllerType != NativeInput.EmulatedControllerType.WIIMOTE) {
+                    addRoundButton(OverlayButton.L_STICK_CLICK, "L3")
+                    addRoundButton(OverlayButton.R_STICK_CLICK, "R3")
+                }
+
+                if (nativeControllerType == NativeInput.EmulatedControllerType.VPAD) {
+                    addRoundButton(OverlayButton.BLOW_MIC, BlowButtonInnerDrawing())
+                }
+			}
+			
             removeAll { (overlayInput, _) -> !isInputVisible(overlayInput) }
         }
     }

@@ -86,7 +86,9 @@ namespace NativeInput
 		auto& touchInfo = isTV ? instance.m_main_mouse : instance.m_pad_mouse;
 		std::scoped_lock lock(touchInfo.m_mutex);
 		touchInfo.position = {x, y};
-		touchInfo.left_down = touchInfo.left_down_toggle = status;
+		touchInfo.left_down = status;
+		if (status)
+			touchInfo.left_down_toggle = true;
 	}
 
 	std::pair<EmulatedControllerPtr, ControllerPtr> GetDeviceControllerPair()

@@ -4,6 +4,7 @@
 #include "input/emulated/ClassicController.h"
 #include "input/emulated/ProController.h"
 #include "input/emulated/WiimoteController.h"
+#include "input/emulated/TaikoController.h"
 
 WPADController::WPADController(size_t player_index, WPADDataFormat data_format)
 	: EmulatedController(player_index), m_data_format(data_format)
@@ -56,7 +57,8 @@ uint32 WPADController::get_emulated_button_flag(WPADDataFormat format, uint32 id
 	case kDataFormat_BALANCE_CHECKER: break;
 	case kDataFormat_DRUM: break;
 	
-	case kDataFormat_TAIKO: break;
+	case kDataFormat_TAIKO:
+		return TaikoController::s_get_emulated_button_flag(id);
 	case kDataFormat_URCC:
 		return ProController::s_get_emulated_button_flag(id);
 
@@ -114,12 +116,11 @@ void WPADController::WPADRead(WPADStatus_t* status)
 	case kDataFormat_CLASSIC_ACC_DPD:
 	case kDataFormat_GUITAR:
 	case kDataFormat_DRUM:
-	case kDataFormat_TAIKO:
 	{
 		WPADCLStatus_t* ex_status = (WPADCLStatus_t*)status;
 		memset(ex_status, 0x00, sizeof(*ex_status));
 		ex_status->clButton = button;
-		
+
 		auto axis = get_axis();
 		axis *= 2048.0f;
 		ex_status->clLStickX = (uint16)axis.x;
@@ -129,6 +130,34 @@ void WPADController::WPADRead(WPADStatus_t* status)
 		rotation *= 2048.0f;
 		ex_status->clRStickX = (uint16)rotation.x;
 		ex_status->clRStickY = (uint16)rotation.y;
+		break;
+	}
+	case kDataFormat_TAIKO:
+	{
+		WPADCLStatus_t* ex_status = (WPADCLStatus_t*)status;
+		memset(ex_status, 0x00, sizeof(*ex_status));
+
+		uint32 core_button = 0;
+		uint32 cl_button = 0;
+		if (is_mapping_down(TaikoController::kButtonId_One))
+			core_button |= kWPADButton_1;
+		if (is_mapping_down(TaikoController::kButtonId_Two))
+			core_button |= kWPADButton_2;
+		if (is_mapping_down(TaikoController::kButtonId_Plus))
+			core_button |= kWPADButton_Plus;      // 改成核心按键
+		if (is_mapping_down(TaikoController::kButtonId_Minus))
+			core_button |= kWPADButton_Minus;     // 改成核心按键
+		if (is_mapping_down(TaikoController::kButtonId_DonLeft))
+			cl_button |= 0x40;
+		if (is_mapping_down(TaikoController::kButtonId_DonRight))
+			cl_button |= 0x10;
+		if (is_mapping_down(TaikoController::kButtonId_KaLeft))
+			cl_button |= 0x20;
+		if (is_mapping_down(TaikoController::kButtonId_KaRight))
+			cl_button |= 0x08;
+
+		status->button = core_button;
+		ex_status->clButton = cl_button;
 		break;
 	}
 	case kDataFormat_TRAIN:
@@ -190,6 +219,7 @@ void WPADController::KPADRead(KPADStatus_t& status, const BtnRepeat& repeat)
 		trigger = &status.ex_status.uc.trig;
 		break;
 	case Classic:
+	case Taiko:
 		hold = &status.ex_status.cl.hold;
 		release = &status.ex_status.cl.release;
 		trigger = &status.ex_status.cl.trig;
@@ -208,6 +238,25 @@ void WPADController::KPADRead(KPADStatus_t& status, const BtnRepeat& repeat)
 			const uint32 value = get_emulated_button_flag(m_data_format, i);
 			*hold |= value;
 		}
+	}
+
+	// taiko controller also drives the base WPADStatus_t core button field (for 1/2)
+	if (type() == Taiko)
+	{
+		uint32 core_hold = 0;
+		if (is_mapping_down(TaikoController::kButtonId_One))
+			core_hold |= kWPADButton_1;
+		if (is_mapping_down(TaikoController::kButtonId_Two))
+			core_hold |= kWPADButton_2;
+		if (is_mapping_down(TaikoController::kButtonId_Plus))
+			core_hold |= kWPADButton_Plus;
+		if (is_mapping_down(TaikoController::kButtonId_Minus))
+			core_hold |= kWPADButton_Minus;
+
+		status.hold |= core_hold;
+		status.release = m_last_core_holdvalue & ~status.hold;
+		status.trig = ~m_last_core_holdvalue & status.hold;
+		m_last_core_holdvalue = status.hold;
 	}
 
 	m_homebutton_down |= is_home_down();
@@ -375,6 +424,8 @@ void WPADController::KPADRead(KPADStatus_t& status, const BtnRepeat& repeat)
 
 		if (HAS_FLAG((uint32)status.ex_status.cl.hold, kCLButton_ZR))
 			status.ex_status.cl.rtrigger = 1.0f;
+		break;
+	case Taiko:
 		break;
 	default:
 		cemu_assert(false);

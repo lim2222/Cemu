@@ -36,6 +36,10 @@ class InputOverlaySettingsViewModel(
         it.copy(isVibrateOnTouchEnabled = enabled)
     }
 
+	fun setVibrationAmplitude(amplitude: Int) = updateOverlay {
+		it.copy(vibrationAmplitude = amplitude)
+	}
+
     fun setOverlayEnabled(enabled: Boolean) = updateOverlay {
         it.copy(isOverlayEnabled = enabled)
     }

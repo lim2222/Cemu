@@ -49,6 +49,7 @@ data class InputOverlayRect(
 @Serializable
 data class InputOverlaySettings(
     val isVibrateOnTouchEnabled: Boolean = false,
+	val vibrationAmplitude: Int = 128,
     val isOverlayEnabled: Boolean = false,
     val controllerIndex: Int = 0,
     val alpha: Int = 64,

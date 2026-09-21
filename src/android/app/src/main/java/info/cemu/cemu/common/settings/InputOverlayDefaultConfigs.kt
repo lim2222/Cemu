@@ -191,6 +191,34 @@ fun defaultOverlayConfigFor(input: OverlayInputConfig): InputOverlayConfig {
             paddingVertical = 8,
             size = 40
         )
+		
+		OverlayInputConfig.TAIKO_DON_LEFT -> InputOverlayConfig(
+            alignBottom = true,
+            paddingHorizontal = 24,
+            paddingVertical = 24,
+            size = 200
+        )
+
+        OverlayInputConfig.TAIKO_DON_RIGHT -> InputOverlayConfig(
+            alignBottom = true,
+            paddingHorizontal = 24,
+            paddingVertical = 24,
+            size = 200
+        )
+
+        OverlayInputConfig.TAIKO_KA_LEFT -> InputOverlayConfig(
+            alignBottom = true,
+            paddingHorizontal = 24,
+            paddingVertical = 24,
+            size = 200
+        )
+
+        OverlayInputConfig.TAIKO_KA_RIGHT -> InputOverlayConfig(
+            alignBottom = true,
+            paddingHorizontal = 24,
+            paddingVertical = 24,
+            size = 200
+        )
     }
 }
 

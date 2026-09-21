@@ -49,6 +49,16 @@ fun InputOverlaySettingsScreen(
             onCheckedChanged = { viewModel.setVibrateOnTouch(it) }
         )
 
+		Slider(
+			label = tr("Vibration strength"),
+			value = overlaySettings.vibrationAmplitude,
+			valueFrom = 1,
+			steps = 16,
+			valueTo = 255,
+			onValueChange = { viewModel.setVibrationAmplitude(it) },
+			labelFormatter = { it.toString() },
+		)
+
         Slider(
             label = tr("Inputs opacity"),
             value = overlaySettings.alpha,
