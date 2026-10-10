@@ -186,7 +186,7 @@ jobs:
             inputs.next_version_minor }}-windows-x64-installer.exe
 
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       matrix:
         arch: [ x86_64, arm64 ]
@@ -210,8 +210,11 @@ jobs:
 
       - name: "Install system dependencies"
         run: |
+          # Removing azure/bicep and aws to silence warnings in Github Actions
+          brew uninstall bicep
+          brew untap aws/tap azure/bicep
           brew update
-          brew install nasm automake libtool
+          brew install nasm automake libtool mono
 
       - name: "Install molten-vk"
         run: |
