@@ -53,9 +53,27 @@ data class InputOverlaySettings(
     val isOverlayEnabled: Boolean = false,
     val controllerIndex: Int = 0,
     val alpha: Int = 64,
+    // Default layout. Edited by the global input overlay settings screen and used by games
+    // which have not customized their overlay yet.
     val inputVisibilityMap: Map<OverlayInputConfig, Boolean> = emptyMap(),
     val inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect> = emptyMap(),
-)
+    // Per-game overrides keyed by the launch path of the title. When a game has an entry its
+    // layout is used instead of the default one, so that games do not affect each other.
+    val inputVisibilityMapByGame: Map<String, Map<OverlayInputConfig, Boolean>> = emptyMap(),
+    val inputOverlayRectMapByGame: Map<String, Map<OverlayInputConfig, InputOverlayRect>> = emptyMap(),
+) {
+    fun resolvedForGame(gameKey: String?): InputOverlaySettings {
+        if (gameKey == null) {
+            return this
+        }
+
+        return copy(
+            inputVisibilityMap = inputVisibilityMapByGame[gameKey] ?: inputVisibilityMap,
+            inputOverlayRectMap = inputOverlayRectMapByGame[gameKey] ?: inputOverlayRectMap,
+        )
+    }
+}
+
 
 @Serializable
 data class AppSettings(

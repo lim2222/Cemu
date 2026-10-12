@@ -430,6 +430,8 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
         }
 
         inputs = mutableListOf<Pair<OverlayInput, Input>>().apply {
+            // Keep the set of inputs per controller type in sync with
+            // overlayInputsForControllerType() in OverlayInputs.kt.
             if (nativeControllerType == NativeInput.EmulatedControllerType.TAIKO) {
                 addRoundButton(OverlayButton.MINUS, "-")
                 addRoundButton(OverlayButton.PLUS, "+")

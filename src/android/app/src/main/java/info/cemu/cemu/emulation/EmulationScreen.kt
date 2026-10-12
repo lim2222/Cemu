@@ -65,12 +65,14 @@ import info.cemu.cemu.R
 import info.cemu.cemu.common.android.display.DisplayUtils
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.HotkeyAction
+import info.cemu.cemu.common.settings.OverlayInputConfig
 import info.cemu.cemu.common.ui.extensions.showMessage
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.emulation.emulatedusbdevices.EmulatedUSBDevicesDialog
 import info.cemu.cemu.emulation.input.HotkeyManager
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurface
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView
+import info.cemu.cemu.emulation.inputoverlay.overlayInputConfigsForControllerType
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.DEFAULT
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.EDIT_POSITION
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.EDIT_SIZE
@@ -95,6 +97,7 @@ fun EmulationScreen(
     var showQuitConfirmationDialog by remember { mutableStateOf(false) }
     var inputOverlayInputMode by rememberSaveable { mutableStateOf(DEFAULT) }
     var showEmulatedUSBDevices by remember { mutableStateOf(false) }
+    var showInputVisibilityDialog by remember { mutableStateOf(false) }
 
     val emulationError by viewModel.emulationError.collectAsState()
     val isEmulationInitialized by viewModel.isEmulationInitialized.collectAsState()
@@ -187,6 +190,10 @@ fun EmulationScreen(
                             viewModel.resetInputOverlayLayout()
                             closeDrawer()
                         },
+                        onEditVisibleInputs = {
+                            showInputVisibilityDialog = true
+                            closeDrawer()
+                        },
                         onQuit = {
                             showQuitConfirmationDialog = true
                             closeDrawer()
@@ -262,6 +269,15 @@ fun EmulationScreen(
         )
     }
 
+    if (showInputVisibilityDialog) {
+        InputOverlayVisibilityDialog(
+            controllerType = inputOverlayControllerType,
+            inputVisibilityMap = inputOverlaySettings.inputVisibilityMap,
+            onToggle = { input, visible -> viewModel.setInputOverlayVisibility(input, visible) },
+            onDismiss = { showInputVisibilityDialog = false },
+        )
+    }
+
     EmulationTextInputDialog()
 }
 
@@ -304,12 +320,72 @@ private fun EditInputsLayout(
 }
 
 @Composable
+private fun InputOverlayVisibilityDialog(
+    controllerType: Int,
+    inputVisibilityMap: Map<OverlayInputConfig, Boolean>,
+    onToggle: (OverlayInputConfig, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val inputs = overlayInputConfigsForControllerType(controllerType)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(tr("Done")) }
+        },
+        title = { Text(tr("Visible Inputs")) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                for (input in inputs) {
+                    CheckboxItem(
+                        label = overlayInputLabel(input, controllerType),
+                        checked = inputVisibilityMap[input] ?: true,
+                        onCheckedChange = { onToggle(input, it) },
+                    )
+                }
+            }
+        },
+    )
+}
+
+private fun overlayInputLabel(input: OverlayInputConfig, controllerType: Int): String = when (input) {
+    OverlayInputConfig.BUTTON_A -> "A"
+    OverlayInputConfig.BUTTON_B -> "B"
+    OverlayInputConfig.BUTTON_X -> "X"
+    OverlayInputConfig.BUTTON_Y -> "Y"
+    OverlayInputConfig.BUTTON_ONE -> "1"
+    OverlayInputConfig.BUTTON_TWO -> "2"
+    OverlayInputConfig.BUTTON_C -> "C"
+    OverlayInputConfig.BUTTON_Z -> "Z"
+    OverlayInputConfig.BUTTON_HOME -> tr("Home")
+    OverlayInputConfig.BUTTON_L -> "L"
+    OverlayInputConfig.BUTTON_R -> "R"
+    OverlayInputConfig.BUTTON_L_STICK_CLICK -> "L3"
+    OverlayInputConfig.BUTTON_R_STICK_CLICK -> "R3"
+    OverlayInputConfig.BUTTON_PLUS -> "+"
+    OverlayInputConfig.BUTTON_MINUS -> "-"
+    OverlayInputConfig.BUTTON_ZL -> "ZL"
+    OverlayInputConfig.BUTTON_ZR -> "ZR"
+    OverlayInputConfig.BUTTON_BLOW_MIC -> tr("Blow mic")
+    OverlayInputConfig.JOYSTICK_LEFT -> tr("Left joystick")
+    OverlayInputConfig.JOYSTICK_RIGHT ->
+        if (controllerType == NativeInput.EmulatedControllerType.WIIMOTE) tr("Nunchuck stick")
+        else tr("Right joystick")
+    OverlayInputConfig.DPAD -> tr("D-pad")
+    OverlayInputConfig.TAIKO_DON_LEFT -> tr("Taiko drum")
+    OverlayInputConfig.TAIKO_DON_RIGHT -> tr("Taiko drum")
+    OverlayInputConfig.TAIKO_KA_LEFT -> tr("Taiko drum")
+    OverlayInputConfig.TAIKO_KA_RIGHT -> tr("Taiko drum")
+}
+
+@Composable
 private fun EmulationSideMenuContent(
     sideMenuState: SideMenuState,
     updateState: (SideMenuState) -> Unit,
     onShowEmulatedUSBDevices: () -> Unit,
     onEditInputOverlay: () -> Unit,
     onResetInputOverlay: () -> Unit,
+    onEditVisibleInputs: () -> Unit,
     onQuit: () -> Unit,
 ) {
     CheckboxItem(
@@ -365,6 +441,12 @@ private fun EmulationSideMenuContent(
         label = tr("Edit inputs"),
         enabled = sideMenuState.isInputOverlayVisible,
         onClick = onEditInputOverlay,
+    )
+
+    TextButtonItem(
+        label = tr("Visible inputs"),
+        enabled = sideMenuState.isInputOverlayVisible,
+        onClick = onEditVisibleInputs,
     )
 
     TextButtonItem(

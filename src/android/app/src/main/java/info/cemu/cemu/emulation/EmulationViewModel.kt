@@ -112,19 +112,46 @@ class EmulationViewModel(
         }
     }
 
-    val inputOverlaySettings = dataStore.data.map { it.inputOverlaySettings }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        InputOverlaySettings(),
-    )
+    val inputOverlaySettings = dataStore.data
+        .map { it.inputOverlaySettings.resolvedForGame(launchPath) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            InputOverlaySettings().resolvedForGame(launchPath),
+        )
 
     fun saveInputOverlayRectangles(inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect>) {
         viewModelScope.launch {
             dataStore.updateData {
-                val overlaySettings =
-                    it.inputOverlaySettings.copy(inputOverlayRectMap = inputOverlayRectMap)
+                val overlaySettings = it.inputOverlaySettings
+                val gameRectMap =
+                    (overlaySettings.inputOverlayRectMapByGame[launchPath] ?: emptyMap()) +
+                        inputOverlayRectMap
 
-                it.copy(inputOverlaySettings = overlaySettings)
+                it.copy(
+                    inputOverlaySettings = overlaySettings.copy(
+                        inputOverlayRectMapByGame =
+                            overlaySettings.inputOverlayRectMapByGame + (launchPath to gameRectMap),
+                    )
+                )
+            }
+        }
+    }
+
+    fun setInputOverlayVisibility(input: OverlayInputConfig, visible: Boolean) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                val overlaySettings = it.inputOverlaySettings
+                val gameVisibilityMap =
+                    (overlaySettings.inputVisibilityMapByGame[launchPath] ?: overlaySettings.inputVisibilityMap) +
+                        (input to visible)
+
+                it.copy(
+                    inputOverlaySettings = overlaySettings.copy(
+                        inputVisibilityMapByGame =
+                            overlaySettings.inputVisibilityMapByGame + (launchPath to gameVisibilityMap),
+                    )
+                )
             }
         }
     }
@@ -132,10 +159,16 @@ class EmulationViewModel(
     fun resetInputOverlayLayout() {
         viewModelScope.launch {
             dataStore.updateData {
-                val overlaySettings =
-                    it.inputOverlaySettings.copy(inputOverlayRectMap = emptyMap())
+                val overlaySettings = it.inputOverlaySettings
 
-                it.copy(inputOverlaySettings = overlaySettings)
+                it.copy(
+                    inputOverlaySettings = overlaySettings.copy(
+                        inputOverlayRectMapByGame = overlaySettings.inputOverlayRectMapByGame +
+                                (launchPath to emptyMap<OverlayInputConfig, InputOverlayRect>()),
+                        inputVisibilityMapByGame = overlaySettings.inputVisibilityMapByGame +
+                            (launchPath to emptyMap<OverlayInputConfig, Boolean>()),
+                    )
+                )
             }
         }
     }

@@ -1,6 +1,7 @@
 package info.cemu.cemu.emulation.inputoverlay
 
 import info.cemu.cemu.common.settings.OverlayInputConfig
+import info.cemu.cemu.nativeinterface.NativeInput
 
 sealed interface OverlayInput
 
@@ -79,3 +80,77 @@ fun OverlayInput.toConfig(): OverlayInputConfig = when (this) {
 		OverlayTaiko.KA_RIGHT -> OverlayInputConfig.TAIKO_KA_RIGHT
 	}
 }
+
+// The overlay inputs that actually get drawn for a given emulated controller type.
+// Must stay in sync with InputOverlaySurfaceView.setInputs().
+fun overlayInputsForControllerType(controllerType: Int): List<OverlayInput> = when (controllerType) {
+    NativeInput.EmulatedControllerType.TAIKO -> listOf(
+        OverlayButton.MINUS,
+        OverlayButton.PLUS,
+        OverlayButton.ONE,
+        OverlayButton.TWO,
+        OverlayTaiko.DON_LEFT,
+    )
+
+    NativeInput.EmulatedControllerType.WIIMOTE -> listOf(
+        OverlayButton.MINUS,
+        OverlayButton.PLUS,
+        OverlayDpad.DPAD_UP,
+        OverlayButton.A,
+        OverlayButton.B,
+        OverlayJoystick.RIGHT,
+        OverlayButton.ONE,
+        OverlayButton.TWO,
+        OverlayButton.C,
+        OverlayButton.Z,
+        OverlayButton.HOME,
+    )
+
+    NativeInput.EmulatedControllerType.CLASSIC -> listOf(
+        OverlayButton.MINUS,
+        OverlayButton.PLUS,
+        OverlayDpad.DPAD_UP,
+        OverlayButton.A,
+        OverlayButton.B,
+        OverlayJoystick.RIGHT,
+        OverlayButton.X,
+        OverlayButton.Y,
+        OverlayButton.ZR,
+        OverlayButton.ZL,
+        OverlayButton.L,
+        OverlayButton.R,
+        OverlayJoystick.LEFT,
+    )
+
+    NativeInput.EmulatedControllerType.PRO,
+    NativeInput.EmulatedControllerType.VPAD,
+    -> {
+        val buttons = mutableListOf<OverlayInput>(
+            OverlayButton.MINUS,
+            OverlayButton.PLUS,
+            OverlayDpad.DPAD_UP,
+            OverlayButton.A,
+            OverlayButton.B,
+            OverlayJoystick.RIGHT,
+            OverlayButton.X,
+            OverlayButton.Y,
+            OverlayButton.ZR,
+            OverlayButton.ZL,
+            OverlayButton.L,
+            OverlayButton.R,
+            OverlayJoystick.LEFT,
+            OverlayButton.L_STICK_CLICK,
+            OverlayButton.R_STICK_CLICK,
+        )
+        if (controllerType == NativeInput.EmulatedControllerType.VPAD) {
+            buttons.add(OverlayButton.BLOW_MIC)
+        }
+        buttons
+    }
+
+    else -> emptyList()
+}
+
+fun overlayInputConfigsForControllerType(controllerType: Int): List<OverlayInputConfig> =
+    overlayInputsForControllerType(controllerType).map { it.toConfig() }
+
