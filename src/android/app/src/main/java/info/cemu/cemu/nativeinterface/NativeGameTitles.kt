@@ -76,6 +76,14 @@ object NativeGameTitles {
     @JvmStatic
     external fun setDriverSettingForTitle(gameTitleId: Long, driverSetting: DriverSetting)
 
+    const val CONTROLLER_TYPE_GLOBAL: Int = -2
+
+    @JvmStatic
+    external fun getControllerTypeForTitle(gameTitleId: Long, controllerIndex: Int): Int
+
+    @JvmStatic
+    external fun setControllerTypeForTitle(gameTitleId: Long, controllerIndex: Int, controllerType: Int)
+
     @JvmStatic
     external fun titleHasShaderCacheFiles(gameTitleId: Long): Boolean
 

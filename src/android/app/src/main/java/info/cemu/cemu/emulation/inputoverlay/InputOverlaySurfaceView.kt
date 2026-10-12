@@ -51,6 +51,8 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
     private var pixelDensity = 1
     private var currentConfiguredInput: Input? = null
     private var nativeControllerType = NativeInput.EmulatedControllerType.DISABLED
+    // the controller type the inputs were last built for, used to rebuild them when it changes
+    private var lastAppliedControllerType = Int.MIN_VALUE
     private var onJoystickChange: (OverlayInput, Float, Float, Float, Float) -> Unit =
         { _, _, _, _, _ -> }
     private var overlyButtonToNativeButton: (OverlayInput) -> Int = { _ -> -1 }
@@ -79,12 +81,13 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
         setOnTouchListener(this)
     }
 
-    fun applySettings(inputOverlaySettings: InputOverlaySettings) {
-        if (this.settings == inputOverlaySettings) {
+    fun applySettings(inputOverlaySettings: InputOverlaySettings, controllerType: Int) {
+        if (this.settings == inputOverlaySettings && lastAppliedControllerType == controllerType) {
             return
         }
 
         this.settings = inputOverlaySettings
+        lastAppliedControllerType = controllerType
 
         setInputs()
 
@@ -623,6 +626,7 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
 fun InputOverlaySurface(
     isVisible: Boolean,
     inputOverlaySettings: InputOverlaySettings,
+    controllerType: Int,
     inputMode: InputOverlaySurfaceView.InputMode,
     onEditFinished: (Map<OverlayInputConfig, InputOverlayRect>) -> Unit,
 ) {
@@ -632,14 +636,14 @@ fun InputOverlaySurface(
             InputOverlaySurfaceView(context).apply {
                 setVisible(isVisible)
                 setInputMode(inputMode)
-                applySettings(inputOverlaySettings)
+                applySettings(inputOverlaySettings, controllerType)
                 onEditFinishedListener = onEditFinished
             }
         },
         update = { view ->
             view.setVisible(isVisible)
             view.setInputMode(inputMode)
-            view.applySettings(inputOverlaySettings)
+            view.applySettings(inputOverlaySettings, controllerType)
             view.onEditFinishedListener = onEditFinished
         }
     )

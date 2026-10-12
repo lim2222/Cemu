@@ -14,10 +14,12 @@ import info.cemu.cemu.common.ui.components.Header
 import info.cemu.cemu.common.ui.components.ScreenContent
 import info.cemu.cemu.common.ui.components.SingleSelection
 import info.cemu.cemu.common.ui.components.Toggle
+import info.cemu.cemu.common.ui.localization.controllerTypeToString
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeGameTitles
 import info.cemu.cemu.nativeinterface.NativeGameTitles.DriverSettingMode
+import info.cemu.cemu.nativeinterface.NativeInput.EmulatedControllerType
 
 @Composable
 fun GameProfileEditScreen(
@@ -100,8 +102,33 @@ fun GameProfileEditScreen(
                 onChoiceChanged = viewModel::setSelectedDriverSetting,
             )
         }
+        SingleSelection(
+            label = tr("Controller {0}", 1),
+            initialChoice = {
+                NativeGameTitles.getControllerTypeForTitle(titleId, 0)
+            },
+            choices = listOf(
+                NativeGameTitles.CONTROLLER_TYPE_GLOBAL,
+                EmulatedControllerType.DISABLED,
+                EmulatedControllerType.VPAD,
+                EmulatedControllerType.PRO,
+                EmulatedControllerType.CLASSIC,
+                EmulatedControllerType.WIIMOTE,
+                EmulatedControllerType.TAIKO,
+            ),
+            choiceToString = ::emulatedControllerChoiceToString,
+            onChoiceChanged = { controllerType ->
+                NativeGameTitles.setControllerTypeForTitle(titleId, 0, controllerType)
+            },
+        )
     }
 }
+
+private fun emulatedControllerChoiceToString(controllerType: Int): String =
+    if (controllerType == NativeGameTitles.CONTROLLER_TYPE_GLOBAL)
+        tr("Use global input settings")
+    else
+        controllerTypeToString(controllerType)
 
 private fun customDriverSettingChoiceToString(driverSettingChoice: DriverSettingChoice): String =
     when (driverSettingChoice.mode) {

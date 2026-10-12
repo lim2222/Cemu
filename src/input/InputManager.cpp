@@ -594,16 +594,39 @@ EmulatedControllerPtr InputManager::set_controller(EmulatedControllerPtr control
 	switch (controller->type())
 	{
 	case EmulatedController::Type::VPAD:
+	{
+		// The emulated GamePad is read by slot/channel (get_vpad_controller(channel) returns
+		// m_vpad[channel]), while the Android input overlay and the per-title game profile
+		// override address controllers by player index (get_controller(player_index)).
+		// Keep both in sync by ordering the VPAD slots by player index. Otherwise an
+		// unrelated VPAD (for example one assigned to a different player) can end up in a
+		// lower slot, making the game read a different controller than the one the overlay
+		// writes to.
+		std::vector<EmulatedControllerPtr> vpads;
+		vpads.reserve(m_vpad.size() + 1);
 		for (auto& pad : m_vpad)
 		{
-			if (!pad)
+			if (pad)
 			{
-				pad.swap(controller);
-				return prev_controller;
+				vpads.push_back(std::move(pad));
+				pad.reset();
 			}
 		}
 
-		break;
+		vpads.push_back(std::move(controller));
+		std::sort(vpads.begin(), vpads.end(), [](const EmulatedControllerPtr& lhs, const EmulatedControllerPtr& rhs)
+		{
+			return lhs->player_index() < rhs->player_index();
+		});
+
+		if (vpads.size() > m_vpad.size())
+			vpads.resize(m_vpad.size());
+
+		for (size_t i = 0; i < vpads.size(); ++i)
+			m_vpad[i] = std::move(vpads[i]);
+
+		return prev_controller;
+	}
 
 	default:
 		for (auto& pad : m_wpad)
@@ -797,6 +820,65 @@ void InputManager::apply_game_profile()
 		}
 	}
 }
+
+#if BOOST_PLAT_ANDROID
+void InputManager::apply_game_profile_controller_types()
+{
+	// Undo per-title emulated controller overrides from a previously launched title so that
+	// titles without an override fall back to the global controller configuration.
+	for (int i = 0; i < kMaxController; ++i)
+	{
+		if (m_is_gameprofile_set[i])
+			load(i);
+	}
+	m_is_gameprofile_set.fill(false);
+
+	const auto& controllerTypes = g_current_game_profile->GetControllerTypes();
+	for (int i = 0; i < kMaxController; ++i)
+	{
+		if (!controllerTypes[i].has_value())
+			continue;
+
+		const int controllerType = controllerTypes[i].value();
+		if (controllerType < 0)
+		{
+			delete_controller(i, false);
+		}
+		else
+		{
+			// Keep the existing mappings when possible so that switching the emulated
+			// controller per game does not wipe the user's input configuration
+			struct MappingEntry
+			{
+				uint64 mappingId;
+				std::shared_ptr<ControllerBase> controller;
+				uint64 button;
+			};
+
+			std::vector<MappingEntry> mappings;
+			if (const auto previousController = get_controller(i))
+			{
+				for (const auto& [mappingId, mapping] : previousController->m_mappings)
+				{
+					if (auto controller = mapping.controller.lock())
+						mappings.push_back({mappingId, controller, mapping.button});
+				}
+			}
+
+			if (const auto newController = set_controller(i, static_cast<EmulatedController::Type>(controllerType)))
+			{
+				const uint64 highestMappingId = newController->get_highest_mapping_id();
+				for (const auto& mapping : mappings)
+				{
+					if (mapping.mappingId <= highestMappingId)
+						newController->set_mapping(mapping.mappingId, mapping.controller, mapping.button);
+				}
+			}
+		}
+		m_is_gameprofile_set[i] = true;
+	}
+}
+#endif
 
 std::vector<std::string> InputManager::get_profiles()
 {

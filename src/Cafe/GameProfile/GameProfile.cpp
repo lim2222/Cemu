@@ -285,6 +285,24 @@ bool GameProfile::Load(uint64_t title_id)
 				m_driverSetting.customPath = iniParser.FindOption("customPath");
 			}
 		}
+		else if (boost::iequals(iniParser.GetCurrentSectionName(), "AndroidController"))
+		{
+			for (int i = 0; i < 8; ++i)
+			{
+				auto option_value = iniParser.FindOption(fmt::format("controller{}", (i + 1)));
+				if (!option_value)
+					continue;
+
+				try
+				{
+					m_controllerTypes[i] = ConvertString<int>(*option_value);
+				}
+				catch (const std::exception&)
+				{
+					// ignore malformed values
+				}
+			}
+		}
 #endif
 	}
 	return true;
@@ -346,6 +364,14 @@ void GameProfile::Save(uint64_t title_id)
 	if (m_driverSetting.mode == DriverSettingMode::Custom && m_driverSetting.customPath.has_value())
 		fs->writeLine(fmt::format("{} = {}", "customPath", m_driverSetting.customPath.value()).c_str());
 	fs->writeLine("");
+
+	fs->writeLine("[AndroidController]");
+	for (int i = 0; i < 8; ++i)
+	{
+		if (m_controllerTypes[i])
+			fs->writeLine(fmt::format("controller{} = {}", (i + 1), m_controllerTypes[i].value()).c_str());
+	}
+	fs->writeLine("");
 #endif
 
 #undef WRITE_OPTIONAL_ENTRY
@@ -378,6 +404,10 @@ void GameProfile::ResetOptional()
 	// controller settings
 	for (auto& profile : m_controllerProfile)
 		profile.reset();
+#if BOOST_PLAT_ANDROID
+	for (auto& controllerType : m_controllerTypes)
+		controllerType.reset();
+#endif
 }
 
 void GameProfile::Reset()
@@ -404,4 +434,8 @@ void GameProfile::Reset()
 	// controller settings
 	for (auto& profile : m_controllerProfile)
 		profile.reset();
+#if BOOST_PLAT_ANDROID
+	for (auto& controllerType : m_controllerTypes)
+		controllerType.reset();
+#endif
 }

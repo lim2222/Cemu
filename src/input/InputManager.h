@@ -53,6 +53,7 @@ public:
 	bool save(size_t player_index, std::string_view filename = {});
 
 	bool is_gameprofile_set(size_t player_index) const;
+	void clear_gameprofile_set(size_t player_index) { m_is_gameprofile_set[player_index] = false; }
 
 	void Shutdown(); 
 	
@@ -80,6 +81,11 @@ public:
 	}
 
 	void apply_game_profile();
+#if BOOST_PLAT_ANDROID
+	// Applies the per-title emulated controller type overrides. Called synchronously while a
+	// title is being launched so that the Android input overlay can pick up the new type.
+	void apply_game_profile_controller_types();
+#endif
 	void on_device_changed();
 
 

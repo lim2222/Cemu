@@ -402,6 +402,10 @@ Java_info_cemu_cemu_nativeinterface_NativeEmulation_prepareTitle([[maybe_unused]
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_launchTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
+	// Apply per-title emulated controller overrides before the title starts. This runs
+	// synchronously (the core's apply_game_profile() runs on the launch thread instead)
+	// so the Android input overlay is built from the correct controller type.
+	InputManager::instance().apply_game_profile_controller_types();
 	CafeSystem::LaunchForegroundTitle();
 }
 

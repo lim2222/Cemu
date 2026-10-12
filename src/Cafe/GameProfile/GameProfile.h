@@ -65,8 +65,19 @@ public:
 		m_driverSetting = driverSetting;
 	}
 
+	// Per-title emulated controller override (Android only).
+	// std::nullopt means "use the global controller type from the input settings"
+	[[nodiscard]] const std::array<std::optional<int>, 8>& GetControllerTypes() const { return m_controllerTypes; }
+
+	void SetControllerType(size_t index, std::optional<int> controllerType)
+	{
+		if (index < m_controllerTypes.size())
+			m_controllerTypes[index] = controllerType;
+	}
+
   private:
 	DriverSetting m_driverSetting;
+	std::array<std::optional<int>, 8> m_controllerTypes;
 
 #endif
 

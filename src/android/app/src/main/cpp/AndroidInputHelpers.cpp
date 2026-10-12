@@ -26,6 +26,11 @@ EmulatedControllerManager& EmulatedControllerManager::GetController(size_t index
 		controller = std::unique_ptr<EmulatedControllerManager>(new EmulatedControllerManager(index));
 	}
 
+	// The emulated controller instance can be replaced outside of this manager, e.g. when a
+	// per-game controller override is applied while a title is being launched. Re-fetch it so
+	// the manager never operates on a stale controller.
+	controller->m_emulatedController = InputManager::instance().get_controller(controller->m_index);
+
 	return *controller;
 }
 
@@ -57,6 +62,10 @@ void EmulatedControllerManager::SetType(EmulatedController::Type type)
 	}
 
 	m_emulatedController = InputManager::instance().set_controller(m_index, type);
+
+	// this is a manual change from the input settings, so it should be persisted to the
+	// global controller profile even if the running title has a game profile override
+	InputManager::instance().clear_gameprofile_set(m_index);
 }
 
 void EmulatedControllerManager::SetMapping(uint64 mappingId, ControllerPtr controller, uint64 buttonId)
@@ -132,6 +141,7 @@ void EmulatedControllerManager::SetDisabled()
 {
 	InputManager::instance().delete_controller(m_index, true);
 	m_emulatedController.reset();
+	InputManager::instance().clear_gameprofile_set(m_index);
 }
 
 EmulatedControllerPtr EmulatedControllerManager::GetControllerPtr() const

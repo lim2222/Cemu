@@ -29,6 +29,7 @@ namespace NativeGameTitles
 		return cachePaths;
 	}
 	TitleId g_currentTitleId = 0;
+	constexpr jint kControllerTypeGlobal = -2;
 	GameProfile g_currentGameProfile{};
 	void LoadGameProfile(TitleId titleId)
 	{
@@ -144,6 +145,39 @@ Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setDriverSettingForTitle([[
 	};
 
 	NativeGameTitles::g_currentGameProfile.SetDriverSetting(driverSetting);
+
+	NativeGameTitles::g_currentGameProfile.Save(game_title_id);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_getControllerTypeForTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id, jint controller_index)
+{
+	NativeGameTitles::LoadGameProfile(game_title_id);
+
+	const auto& controllerTypes = NativeGameTitles::g_currentGameProfile.GetControllerTypes();
+	if (controller_index < 0 || static_cast<size_t>(controller_index) >= controllerTypes.size())
+		return NativeGameTitles::kControllerTypeGlobal;
+
+	const auto& controllerType = controllerTypes[controller_index];
+	if (!controllerType.has_value())
+		return NativeGameTitles::kControllerTypeGlobal;
+
+	return static_cast<jint>(controllerType.value());
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setControllerTypeForTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id, jint controller_index, jint controller_type)
+{
+	NativeGameTitles::LoadGameProfile(game_title_id);
+
+	const auto& controllerTypes = NativeGameTitles::g_currentGameProfile.GetControllerTypes();
+	if (controller_index < 0 || static_cast<size_t>(controller_index) >= controllerTypes.size())
+		return;
+
+	if (controller_type == NativeGameTitles::kControllerTypeGlobal)
+		NativeGameTitles::g_currentGameProfile.SetControllerType(controller_index, std::nullopt);
+	else
+		NativeGameTitles::g_currentGameProfile.SetControllerType(controller_index, static_cast<int>(controller_type));
 
 	NativeGameTitles::g_currentGameProfile.Save(game_title_id);
 }

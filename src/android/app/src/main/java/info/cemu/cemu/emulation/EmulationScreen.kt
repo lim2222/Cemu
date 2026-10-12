@@ -75,6 +75,7 @@ import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.D
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.EDIT_POSITION
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.EDIT_SIZE
 import info.cemu.cemu.nativeinterface.NativeEmulation
+import info.cemu.cemu.nativeinterface.NativeInput
 import kotlinx.coroutines.launch
 
 @Composable
@@ -100,6 +101,14 @@ fun EmulationScreen(
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val isInputOverlayVisible by viewModel.isInputOverlayVisible.collectAsState()
     val inputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
+    // Re-read once the title has launched, since the per-game controller override is applied
+    // while launching and can change which overlay buttons are shown.
+    val inputOverlayControllerType = remember(
+        inputOverlaySettings.controllerIndex,
+        isEmulationInitialized,
+    ) {
+        NativeInput.getControllerType(inputOverlaySettings.controllerIndex)
+    }
 
 
     fun closeDrawer() {
@@ -199,6 +208,7 @@ fun EmulationScreen(
         InputOverlaySurface(
             isVisible = isInputOverlayVisible,
             inputOverlaySettings = inputOverlaySettings,
+            controllerType = inputOverlayControllerType,
             inputMode = inputOverlayInputMode,
             onEditFinished = { viewModel.saveInputOverlayRectangles(it) },
         )
