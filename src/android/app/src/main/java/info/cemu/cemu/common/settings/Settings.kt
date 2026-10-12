@@ -57,22 +57,32 @@ data class InputOverlaySettings(
     // which have not customized their overlay yet.
     val inputVisibilityMap: Map<OverlayInputConfig, Boolean> = emptyMap(),
     val inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect> = emptyMap(),
-    // Per-game overrides keyed by the launch path of the title. When a game has an entry its
-    // layout is used instead of the default one, so that games do not affect each other.
+    // Per-game overrides keyed by inputOverlayKey(). A title can be played with different
+    // controller types (GamePad, Pro Controller, ...) which need their own arrangement, so the
+    // key also contains the controller type. Games do not affect each other.
     val inputVisibilityMapByGame: Map<String, Map<OverlayInputConfig, Boolean>> = emptyMap(),
     val inputOverlayRectMapByGame: Map<String, Map<OverlayInputConfig, InputOverlayRect>> = emptyMap(),
+    // These are game preferences rather than controller specific, so they are keyed by game only.
+    val inputOverlayAlphaByGame: Map<String, Int> = emptyMap(),
+    val inputOverlayVibrateByGame: Map<String, Boolean> = emptyMap(),
 ) {
-    fun resolvedForGame(gameKey: String?): InputOverlaySettings {
-        if (gameKey == null) {
+    fun resolvedForGame(gameKey: String?, overlayKey: String?): InputOverlaySettings {
+        if (gameKey == null || overlayKey == null) {
             return this
         }
 
         return copy(
-            inputVisibilityMap = inputVisibilityMapByGame[gameKey] ?: inputVisibilityMap,
-            inputOverlayRectMap = inputOverlayRectMapByGame[gameKey] ?: inputOverlayRectMap,
+            inputVisibilityMap = inputVisibilityMapByGame[overlayKey] ?: inputVisibilityMap,
+            inputOverlayRectMap = inputOverlayRectMapByGame[overlayKey] ?: inputOverlayRectMap,
+            alpha = inputOverlayAlphaByGame[gameKey] ?: alpha,
+            isVibrateOnTouchEnabled = inputOverlayVibrateByGame[gameKey] ?: isVibrateOnTouchEnabled,
         )
     }
 }
+
+// The controller type is prefixed so the key stays unique even when the game path contains
+// separators: the part before the first ':' is always the numeric controller type.
+fun inputOverlayKey(gamePath: String, controllerType: Int): String = "$controllerType:$gamePath"
 
 
 @Serializable

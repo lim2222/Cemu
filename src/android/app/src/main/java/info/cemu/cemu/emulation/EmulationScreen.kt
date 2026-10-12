@@ -65,7 +65,9 @@ import info.cemu.cemu.R
 import info.cemu.cemu.common.android.display.DisplayUtils
 import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.HotkeyAction
+import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.common.settings.OverlayInputConfig
+import info.cemu.cemu.common.ui.components.Slider
 import info.cemu.cemu.common.ui.extensions.showMessage
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.emulation.emulatedusbdevices.EmulatedUSBDevicesDialog
@@ -103,14 +105,22 @@ fun EmulationScreen(
     val isEmulationInitialized by viewModel.isEmulationInitialized.collectAsState()
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val isInputOverlayVisible by viewModel.isInputOverlayVisible.collectAsState()
-    val inputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
+    val rawInputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
     // Re-read once the title has launched, since the per-game controller override is applied
     // while launching and can change which overlay buttons are shown.
     val inputOverlayControllerType = remember(
-        inputOverlaySettings.controllerIndex,
+        rawInputOverlaySettings.controllerIndex,
         isEmulationInitialized,
     ) {
-        NativeInput.getControllerType(inputOverlaySettings.controllerIndex)
+        NativeInput.getControllerType(rawInputOverlaySettings.controllerIndex)
+    }
+    // The layout is stored per game *and* per controller type, so a game played with e.g. a
+    // GamePad and a Pro Controller keeps a separate arrangement for each.
+    val inputOverlaySettings = remember(rawInputOverlaySettings, inputOverlayControllerType) {
+        rawInputOverlaySettings.resolvedForGame(
+            gamePath,
+            inputOverlayKey(gamePath, inputOverlayControllerType),
+        )
     }
 
 
@@ -187,13 +197,17 @@ fun EmulationScreen(
                             closeDrawer()
                         },
                         onResetInputOverlay = {
-                            viewModel.resetInputOverlayLayout()
+                            viewModel.resetInputOverlayLayout(inputOverlayControllerType)
                             closeDrawer()
                         },
                         onEditVisibleInputs = {
                             showInputVisibilityDialog = true
                             closeDrawer()
                         },
+                        isVibrateOnTouchEnabled = inputOverlaySettings.isVibrateOnTouchEnabled,
+                        overlayAlpha = inputOverlaySettings.alpha,
+                        onVibrateChanged = { viewModel.setInputOverlayVibrateOnTouch(it) },
+                        onAlphaChanged = { viewModel.setInputOverlayAlpha(it) },
                         onQuit = {
                             showQuitConfirmationDialog = true
                             closeDrawer()
@@ -217,7 +231,7 @@ fun EmulationScreen(
             inputOverlaySettings = inputOverlaySettings,
             controllerType = inputOverlayControllerType,
             inputMode = inputOverlayInputMode,
-            onEditFinished = { viewModel.saveInputOverlayRectangles(it) },
+            onEditFinished = { viewModel.saveInputOverlayRectangles(inputOverlayControllerType, it) },
         )
 
         if (inputOverlayInputMode != DEFAULT) {
@@ -273,7 +287,9 @@ fun EmulationScreen(
         InputOverlayVisibilityDialog(
             controllerType = inputOverlayControllerType,
             inputVisibilityMap = inputOverlaySettings.inputVisibilityMap,
-            onToggle = { input, visible -> viewModel.setInputOverlayVisibility(input, visible) },
+            onToggle = { input, visible ->
+                viewModel.setInputOverlayVisibility(inputOverlayControllerType, input, visible)
+            },
             onDismiss = { showInputVisibilityDialog = false },
         )
     }
@@ -386,6 +402,10 @@ private fun EmulationSideMenuContent(
     onEditInputOverlay: () -> Unit,
     onResetInputOverlay: () -> Unit,
     onEditVisibleInputs: () -> Unit,
+    isVibrateOnTouchEnabled: Boolean,
+    overlayAlpha: Int,
+    onVibrateChanged: (Boolean) -> Unit,
+    onAlphaChanged: (Int) -> Unit,
     onQuit: () -> Unit,
 ) {
     CheckboxItem(
@@ -435,6 +455,24 @@ private fun EmulationSideMenuContent(
         label = tr("Show input overlay"),
         checked = sideMenuState.isInputOverlayVisible,
         onCheckedChange = { updateState(sideMenuState.copy(isInputOverlayVisible = it)) },
+    )
+
+    CheckboxItem(
+        label = tr("Vibrate on touch"),
+        checked = isVibrateOnTouchEnabled,
+        onCheckedChange = onVibrateChanged,
+        enabled = sideMenuState.isInputOverlayVisible,
+    )
+
+    Slider(
+        label = tr("Inputs opacity"),
+        value = overlayAlpha,
+        valueFrom = 0,
+        steps = 16,
+        valueTo = 255,
+        onValueChange = onAlphaChanged,
+        labelFormatter = { it.toString() },
+        enabled = sideMenuState.isInputOverlayVisible,
     )
 
     TextButtonItem(

@@ -19,6 +19,7 @@ import info.cemu.cemu.common.settings.AppSettingsStore
 import info.cemu.cemu.common.settings.InputOverlayRect
 import info.cemu.cemu.common.settings.InputOverlaySettings
 import info.cemu.cemu.common.settings.OverlayInputConfig
+import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.PrepareTitleResult
 import info.cemu.cemu.nativeinterface.NativeException
@@ -112,61 +113,103 @@ class EmulationViewModel(
         }
     }
 
+    // Raw settings. The per game/controller type layout is resolved by the caller with
+    // resolvedForGame(launchPath, inputOverlayKey(launchPath, controllerType)).
     val inputOverlaySettings = dataStore.data
-        .map { it.inputOverlaySettings.resolvedForGame(launchPath) }
+        .map { it.inputOverlaySettings }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            InputOverlaySettings().resolvedForGame(launchPath),
+            InputOverlaySettings(),
         )
 
-    fun saveInputOverlayRectangles(inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect>) {
+    fun saveInputOverlayRectangles(
+        controllerType: Int,
+        inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect>,
+    ) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
+                val key = inputOverlayKey(launchPath, controllerType)
                 val gameRectMap =
-                    (overlaySettings.inputOverlayRectMapByGame[launchPath] ?: emptyMap()) +
+                    (overlaySettings.inputOverlayRectMapByGame[key] ?: emptyMap()) +
                         inputOverlayRectMap
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
                         inputOverlayRectMapByGame =
-                            overlaySettings.inputOverlayRectMapByGame + (launchPath to gameRectMap),
+                            overlaySettings.inputOverlayRectMapByGame + (key to gameRectMap),
                     )
                 )
             }
         }
     }
 
-    fun setInputOverlayVisibility(input: OverlayInputConfig, visible: Boolean) {
+    fun setInputOverlayVisibility(
+        controllerType: Int,
+        input: OverlayInputConfig,
+        visible: Boolean,
+    ) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
+                val key = inputOverlayKey(launchPath, controllerType)
                 val gameVisibilityMap =
-                    (overlaySettings.inputVisibilityMapByGame[launchPath] ?: overlaySettings.inputVisibilityMap) +
+                    (overlaySettings.inputVisibilityMapByGame[key] ?: overlaySettings.inputVisibilityMap) +
                         (input to visible)
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
                         inputVisibilityMapByGame =
-                            overlaySettings.inputVisibilityMapByGame + (launchPath to gameVisibilityMap),
+                            overlaySettings.inputVisibilityMapByGame + (key to gameVisibilityMap),
                     )
                 )
             }
         }
     }
 
-    fun resetInputOverlayLayout() {
+    fun resetInputOverlayLayout(controllerType: Int) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                val overlaySettings = it.inputOverlaySettings
+                val key = inputOverlayKey(launchPath, controllerType)
+
+                it.copy(
+                    inputOverlaySettings = overlaySettings.copy(
+                        inputOverlayRectMapByGame = overlaySettings.inputOverlayRectMapByGame +
+                                (key to emptyMap<OverlayInputConfig, InputOverlayRect>()),
+                        inputVisibilityMapByGame = overlaySettings.inputVisibilityMapByGame +
+                            (key to emptyMap<OverlayInputConfig, Boolean>()),
+                    )
+                )
+            }
+        }
+    }
+
+    fun setInputOverlayVibrateOnTouch(enabled: Boolean) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
-                        inputOverlayRectMapByGame = overlaySettings.inputOverlayRectMapByGame +
-                                (launchPath to emptyMap<OverlayInputConfig, InputOverlayRect>()),
-                        inputVisibilityMapByGame = overlaySettings.inputVisibilityMapByGame +
-                            (launchPath to emptyMap<OverlayInputConfig, Boolean>()),
+                        inputOverlayVibrateByGame =
+                            overlaySettings.inputOverlayVibrateByGame + (launchPath to enabled),
+                    )
+                )
+            }
+        }
+    }
+
+    fun setInputOverlayAlpha(alpha: Int) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                val overlaySettings = it.inputOverlaySettings
+
+                it.copy(
+                    inputOverlaySettings = overlaySettings.copy(
+                        inputOverlayAlphaByGame =
+                            overlaySettings.inputOverlayAlphaByGame + (launchPath to alpha),
                     )
                 )
             }
@@ -188,6 +231,18 @@ class EmulationViewModel(
                             isPadVisible = sideMenuState.isPadVisible,
                             isPadOnExternalDisplay = sideMenuState.isPadOnExternalDisplay,
                             isExternalScreenRotatedLeft = sideMenuState.isExternalScreenRotatedLeft,
+                        )
+                    )
+                }
+            }
+        }
+
+        if (oldState.isInputOverlayVisible != sideMenuState.isInputOverlayVisible) {
+            viewModelScope.launch {
+                dataStore.updateData {
+                    it.copy(
+                        inputOverlaySettings = it.inputOverlaySettings.copy(
+                            isOverlayEnabled = sideMenuState.isInputOverlayVisible,
                         )
                     )
                 }
