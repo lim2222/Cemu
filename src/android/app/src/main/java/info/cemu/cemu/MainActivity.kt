@@ -110,6 +110,7 @@ private fun createIntentForGame(context: Context, game: Game): Intent {
     )
     intent.action = Intent.ACTION_VIEW
     intent.putExtra(EmulationActivity.EXTRA_LAUNCH_PATH, game.path)
+    intent.putExtra(EmulationActivity.EXTRA_TITLE_ID, game.titleId)
 
     return intent
 }

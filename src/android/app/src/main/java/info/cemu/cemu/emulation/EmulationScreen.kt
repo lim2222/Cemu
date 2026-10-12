@@ -67,8 +67,10 @@ import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.HotkeyAction
 import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.common.settings.OverlayInputConfig
+import info.cemu.cemu.common.ui.components.SingleSelection
 import info.cemu.cemu.common.ui.components.Slider
 import info.cemu.cemu.common.ui.extensions.showMessage
+import info.cemu.cemu.common.ui.localization.controllerTypeToString
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.emulation.emulatedusbdevices.EmulatedUSBDevicesDialog
 import info.cemu.cemu.emulation.input.HotkeyManager
@@ -85,12 +87,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun EmulationScreen(
     gamePath: String,
+    titleId: Long?,
     setMotionSensorEnabled: (Boolean) -> Unit,
     setInputListeningEnabled: (Boolean) -> Unit,
     onQuit: () -> Unit,
     viewModel: EmulationViewModel = viewModel(
         factory = EmulationViewModel.Factory, extras = MutableCreationExtras().apply {
             set(EmulationViewModel.LAUNCH_PATH_KEY, gamePath)
+            if (titleId != null) {
+                set(EmulationViewModel.TITLE_ID_KEY, titleId)
+            }
         }),
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -106,14 +112,9 @@ fun EmulationScreen(
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val isInputOverlayVisible by viewModel.isInputOverlayVisible.collectAsState()
     val rawInputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
-    // Re-read once the title has launched, since the per-game controller override is applied
-    // while launching and can change which overlay buttons are shown.
-    val inputOverlayControllerType = remember(
-        rawInputOverlaySettings.controllerIndex,
-        isEmulationInitialized,
-    ) {
-        NativeInput.getControllerType(rawInputOverlaySettings.controllerIndex)
-    }
+    // The emulated controller type of the overlay's controller. It comes from the view model so
+    // it also updates when the type is changed from the side menu while the game is running.
+    val inputOverlayControllerType by viewModel.controllerType.collectAsState()
     // The layout is stored per game *and* per controller type, so a game played with e.g. a
     // GamePad and a Pro Controller keeps a separate arrangement for each.
     val inputOverlaySettings = remember(rawInputOverlaySettings, inputOverlayControllerType) {
@@ -185,6 +186,15 @@ fun EmulationScreen(
                 ) {
                     EmulationSideMenuContent(
                         sideMenuState = sideMenuState,
+                        controllerType = inputOverlayControllerType,
+                        isEmulationInitialized = isEmulationInitialized,
+                        onControllerTypeChanged = { controllerType ->
+                            viewModel.setControllerType(
+                                rawInputOverlaySettings.controllerIndex,
+                                controllerType,
+                            )
+                            closeDrawer()
+                        },
                         updateState = {
                             viewModel.updateSideMenuState(it)
                             setMotionSensorEnabled(it.isMotionEnabled)
@@ -394,9 +404,40 @@ private fun overlayInputLabel(input: OverlayInputConfig, controllerType: Int): S
     OverlayInputConfig.TAIKO_KA_RIGHT -> tr("Taiko drum")
 }
 
+// Controller types that can be selected from the in-game side menu.
+private val SwitchableControllerTypes = listOf(
+    NativeInput.EmulatedControllerType.VPAD,
+    NativeInput.EmulatedControllerType.PRO,
+    NativeInput.EmulatedControllerType.CLASSIC,
+    NativeInput.EmulatedControllerType.WIIMOTE,
+    NativeInput.EmulatedControllerType.TAIKO,
+)
+
+// Mirrors the checks done by the input settings so a switch cannot exceed the number of
+// emulated controllers the console supports.
+private fun isControllerTypeSwitchAllowed(currentType: Int, newType: Int): Boolean {
+    if (newType == NativeInput.EmulatedControllerType.DISABLED) {
+        return true
+    }
+
+    val counts = NativeInput.getControllersCount()
+    if (newType == NativeInput.EmulatedControllerType.VPAD) {
+        return currentType == NativeInput.EmulatedControllerType.VPAD ||
+            counts.vpadCount < NativeInput.MAX_VPAD_CONTROLLERS
+    }
+
+    val isAlreadyWpad = currentType != NativeInput.EmulatedControllerType.VPAD &&
+        currentType != NativeInput.EmulatedControllerType.DISABLED
+
+    return isAlreadyWpad || counts.wpadCount < NativeInput.MAX_WPAD_CONTROLLERS
+}
+
 @Composable
 private fun EmulationSideMenuContent(
     sideMenuState: SideMenuState,
+    controllerType: Int,
+    isEmulationInitialized: Boolean,
+    onControllerTypeChanged: (Int) -> Unit,
     updateState: (SideMenuState) -> Unit,
     onShowEmulatedUSBDevices: () -> Unit,
     onEditInputOverlay: () -> Unit,
@@ -408,6 +449,16 @@ private fun EmulationSideMenuContent(
     onAlphaChanged: (Int) -> Unit,
     onQuit: () -> Unit,
 ) {
+    SingleSelection(
+        label = tr("Controller type"),
+        choice = controllerType,
+        choices = SwitchableControllerTypes,
+        choiceToString = { controllerTypeToString(it) },
+        enabled = isEmulationInitialized,
+        isChoiceEnabled = { isControllerTypeSwitchAllowed(controllerType, it) },
+        onChoiceChanged = onControllerTypeChanged,
+    )
+
     CheckboxItem(
         label = tr("Enable motion"),
         checked = sideMenuState.isMotionEnabled,

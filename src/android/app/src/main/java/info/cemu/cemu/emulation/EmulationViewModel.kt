@@ -23,6 +23,8 @@ import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.PrepareTitleResult
 import info.cemu.cemu.nativeinterface.NativeException
+import info.cemu.cemu.nativeinterface.NativeGameTitles
+import info.cemu.cemu.nativeinterface.NativeInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +79,7 @@ data class SurfaceDimensions(val width: Int = 1, val height: Int = 1)
 
 class EmulationViewModel(
     private val launchPath: String,
+    private val titleId: Long?,
     private val dataStore: DataStore<AppSettings> = AppSettingsStore.dataStore
 ) : ViewModel() {
     private val _emulationError = MutableStateFlow<NativeError?>(null)
@@ -84,6 +87,15 @@ class EmulationViewModel(
 
     private val _sideMenuState = MutableStateFlow(SideMenuState())
     val sideMenuState = _sideMenuState.asStateFlow()
+
+    // The emulated controller type that is currently applied to the overlay's controller. It can
+    // be changed from the in-game side menu, which switches the controller without restarting the
+    // title, and the choice is remembered for this title.
+    private val _controllerType =
+        MutableStateFlow(NativeInput.EmulatedControllerType.DISABLED)
+    val controllerType = _controllerType.asStateFlow()
+
+    private var overlayControllerIndex = 0
 
     private val _mainSurfaceDimensions = MutableStateFlow(SurfaceDimensions())
     val mainSurfaceDimensions = _mainSurfaceDimensions.asStateFlow()
@@ -102,6 +114,8 @@ class EmulationViewModel(
     init {
         viewModelScope.launch {
             val settings = dataStore.data.first()
+            overlayControllerIndex = settings.inputOverlaySettings.controllerIndex
+            _controllerType.value = NativeInput.getControllerType(overlayControllerIndex)
             _sideMenuState.update {
                 it.copy(
                     isPadVisible = settings.emulationSettings.isPadVisible,
@@ -183,6 +197,23 @@ class EmulationViewModel(
                     )
                 )
             }
+        }
+    }
+
+    fun setControllerType(controllerIndex: Int, type: Int) {
+        if (_controllerType.value == type) {
+            return
+        }
+
+        // Switch the emulated controller of the running title without restarting it.
+        NativeInput.setControllerType(controllerIndex, type)
+        _controllerType.value = type
+        overlayControllerIndex = controllerIndex
+
+        // Remember the choice for this title so it is applied again on the next launch.
+        val id = titleId ?: return
+        if (id >= 0) {
+            NativeGameTitles.setControllerTypeForTitle(id, controllerIndex, type)
         }
     }
 
@@ -374,15 +405,20 @@ class EmulationViewModel(
                 .onError { _emulationError.value = it }
 
             _isEmulationInitialized.value = true
+            // The per-game controller override is applied while the title is launching, so read
+            // the effective type again once emulation is up.
+            _controllerType.value = NativeInput.getControllerType(overlayControllerIndex)
         }
     }
 
     companion object {
         val LAUNCH_PATH_KEY = object : CreationExtras.Key<String> {}
+        val TITLE_ID_KEY = object : CreationExtras.Key<Long> {}
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 EmulationViewModel(
-                    this[LAUNCH_PATH_KEY] as String
+                    this[LAUNCH_PATH_KEY] as String,
+                    this[TITLE_ID_KEY],
                 )
             }
         }

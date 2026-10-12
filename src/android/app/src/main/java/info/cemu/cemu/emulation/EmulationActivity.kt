@@ -113,6 +113,12 @@ class EmulationActivity : AppCompatActivity() {
         return launchPath
     }
 
+    private fun getTitleId(): Long? {
+        val titleId = intent.getLongExtra(EXTRA_TITLE_ID, -1L)
+
+        return if (titleId >= 0) titleId else null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -127,12 +133,14 @@ class EmulationActivity : AppCompatActivity() {
         setFullscreen()
 
         val gamePath = getGamePath()
+        val titleId = getTitleId()
 
         setContent {
             TranslatableContent {
                 ActivityContent {
                     EmulationScreen(
                         gamePath = gamePath,
+                        titleId = titleId,
                         setMotionSensorEnabled = inputManager::setDeviceMotionEnabled,
                         onQuit = ::onQuit,
                         setInputListeningEnabled = { processInputEvents = it },
@@ -185,5 +193,6 @@ class EmulationActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_LAUNCH_PATH: String = BuildConfig.APPLICATION_ID + ".LaunchPath"
+        const val EXTRA_TITLE_ID: String = BuildConfig.APPLICATION_ID + ".TitleId"
     }
 }
