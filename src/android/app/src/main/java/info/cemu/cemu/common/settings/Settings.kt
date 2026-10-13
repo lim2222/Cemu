@@ -13,10 +13,33 @@ import java.io.OutputStream
 
 @Serializable
 data class EmulationSettings(
-    val gamePadPosition: GamePadPosition = GamePadPosition.RIGHT,
+    // How the emulation screen is allowed to rotate. Games run full screen, so this is what
+    // decides between portrait and landscape.
+    val screenOrientation: ScreenOrientationMode = ScreenOrientationMode.LANDSCAPE,
+    // TV/GamePad arrangement. Portrait and landscape keep their own layout so rotating the
+    // device can switch between top/down and side by side automatically. The order of the two
+    // screens is controlled separately by "Swap screens".
+    val screensLayoutPortrait: ScreensLayout = ScreensLayout.TOP_DOWN,
+    val screensLayoutLandscape: ScreensLayout = ScreensLayout.SIDE_BY_SIDE,
+    // Empty space between the TV and GamePad screens, as a percentage of the smaller screen
+    // dimension so it looks the same in portrait and landscape.
+    val screensGap: Int = DEFAULT_SCREENS_GAP,
     val isPadVisible: Boolean = false,
     val isPadOnExternalDisplay: Boolean = false,
     val isExternalScreenRotatedLeft: Boolean = false,
+)
+
+const val DEFAULT_SCREENS_GAP: Int = 2
+const val MAX_SCREENS_GAP: Int = 20
+
+// Per-game overrides for the display settings above. A null value means "use the global
+// default". All fields are optional so adding new ones never breaks stored settings.
+@Serializable
+data class PerGameDisplaySettings(
+    val screenOrientation: ScreenOrientationMode? = null,
+    val screensLayoutPortrait: ScreensLayout? = null,
+    val screensLayoutLandscape: ScreensLayout? = null,
+    val screensGap: Int? = null,
 )
 
 @Serializable
@@ -92,19 +115,23 @@ data class AppSettings(
     val storageSettings: StorageSettings = StorageSettings(),
     val inputOverlaySettings: InputOverlaySettings = InputOverlaySettings(),
     val hotkeySettings: Map<HotkeyAction, HotkeyCombo> = emptyMap(),
+    // Per-game display overrides (orientation and TV/GamePad layout) keyed by launch path.
+    val displaySettingsByGame: Map<String, PerGameDisplaySettings> = emptyMap(),
 )
 
 object AppSettingsSerializer : Serializer<AppSettings> {
     override val defaultValue: AppSettings = AppSettings()
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     override suspend fun readFrom(input: InputStream): AppSettings = try {
-        Json.decodeFromString<AppSettings>(input.readBytes().decodeToString())
+        json.decodeFromString<AppSettings>(input.readBytes().decodeToString())
     } catch (_: Exception) {
         defaultValue
     }
 
     override suspend fun writeTo(t: AppSettings, output: OutputStream) {
-        output.write(Json.encodeToString(t).encodeToByteArray())
+        output.write(json.encodeToString(t).encodeToByteArray())
     }
 }
 

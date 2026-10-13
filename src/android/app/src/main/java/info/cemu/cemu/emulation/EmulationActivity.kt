@@ -1,6 +1,7 @@
 package info.cemu.cemu.emulation
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -26,9 +27,13 @@ import info.cemu.cemu.emulation.input.DeviceMotionHandler
 import info.cemu.cemu.emulation.input.HotkeyManager
 import info.cemu.cemu.emulation.input.InputHandler
 import info.cemu.cemu.emulation.input.NativeInputDeviceListener
+import info.cemu.cemu.common.settings.ScreenOrientationMode
+import info.cemu.cemu.nativeinterface.NativeSettings
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.system.exitProcess
 
 private class InputDelegateManager(context: Context) {
@@ -70,6 +75,7 @@ private class InputDelegateManager(context: Context) {
 class EmulationActivity : AppCompatActivity() {
     private lateinit var inputManager: InputDelegateManager
     private var processInputEvents = true
+    private var previousFullscreenScaling: Int? = null
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (processInputEvents && InputHandler.onMotionEvent(event)) {
@@ -135,6 +141,13 @@ class EmulationActivity : AppCompatActivity() {
         val gamePath = getGamePath()
         val titleId = getTitleId()
 
+        applyInitialOrientation(gamePath)
+
+        // Remember the user's fullscreen scaling. In portrait the emulation surface is a 4:3
+        // area, so the game is stretched into it; in landscape it is restored (the surface is
+        // 16:9 there, which already matches most titles).
+        previousFullscreenScaling = NativeSettings.getFullscreenScaling()
+
         setContent {
             TranslatableContent {
                 ActivityContent {
@@ -163,8 +176,24 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        previousFullscreenScaling?.let { NativeSettings.setFullscreenScaling(it) }
         EmulationSessionState.onSessionStopped(this)
         super.onDestroy()
+    }
+
+    // The stored orientation (per game override, otherwise the global default) is read
+    // synchronously so the window does not start in the wrong orientation first.
+    private fun applyInitialOrientation(gamePath: String) {
+        val mode = try {
+            runBlocking {
+                val settings = AppSettingsStore.dataStore.data.first()
+                settings.displaySettingsByGame[gamePath]?.screenOrientation
+                    ?: settings.emulationSettings.screenOrientation
+            }
+        } catch (_: Exception) {
+            ScreenOrientationMode.LANDSCAPE
+        }
+        requestedOrientation = mode.toRequestedOrientation()
     }
 
     private fun setupHotkeys() {
@@ -195,4 +224,10 @@ class EmulationActivity : AppCompatActivity() {
         const val EXTRA_LAUNCH_PATH: String = BuildConfig.APPLICATION_ID + ".LaunchPath"
         const val EXTRA_TITLE_ID: String = BuildConfig.APPLICATION_ID + ".TitleId"
     }
+}
+
+internal fun ScreenOrientationMode.toRequestedOrientation(): Int = when (this) {
+    ScreenOrientationMode.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+    ScreenOrientationMode.AUTO -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+    ScreenOrientationMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 }

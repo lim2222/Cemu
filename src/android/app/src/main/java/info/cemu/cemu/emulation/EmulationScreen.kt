@@ -3,6 +3,7 @@ package info.cemu.cemu.emulation
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.view.Display
 import android.view.SurfaceHolder
@@ -39,7 +40,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,10 +52,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -63,8 +66,10 @@ import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
 import info.cemu.cemu.common.android.display.DisplayUtils
-import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.HotkeyAction
+import info.cemu.cemu.common.settings.MAX_SCREENS_GAP
+import info.cemu.cemu.common.settings.ScreenOrientationMode
+import info.cemu.cemu.common.settings.ScreensLayout
 import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.common.settings.OverlayInputConfig
 import info.cemu.cemu.common.ui.components.SingleSelection
@@ -82,6 +87,9 @@ import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.E
 import info.cemu.cemu.emulation.inputoverlay.InputOverlaySurfaceView.InputMode.EDIT_SIZE
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeInput
+import info.cemu.cemu.nativeinterface.NativeSettings
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @Composable
@@ -124,6 +132,67 @@ fun EmulationScreen(
         )
     }
 
+    // Display orientation and the TV/GamePad layout. Both are stored per game with a global
+    // fallback so a title can deviate from the global default.
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
+    val perGameDisplaySettings by viewModel.perGameDisplaySettings.collectAsState()
+    val globalDisplaySettings by viewModel.globalDisplaySettings.collectAsState()
+
+    val screenOrientationMode =
+        perGameDisplaySettings?.screenOrientation ?: globalDisplaySettings.screenOrientation
+
+    val screensLayout = if (isPortrait) {
+        perGameDisplaySettings?.screensLayoutPortrait
+            ?: globalDisplaySettings.screensLayoutPortrait
+    } else {
+        perGameDisplaySettings?.screensLayoutLandscape
+            ?: globalDisplaySettings.screensLayoutLandscape
+    }
+
+    val screensGap = perGameDisplaySettings?.screensGap
+        ?: globalDisplaySettings.screensGap
+
+    // A portrait/landscape mode may differ from how the activity was created, which makes the
+    // window rotate right after launch. Creating the emulation surface during that rotation makes
+    // some titles (and the Vulkan renderer) crash, so emulation is only started once the window
+    // has actually reached the requested orientation. Once it started, the surfaces are kept
+    // alive through later rotations (they are only resized) so those never recreate the
+    // SurfaceView.
+    val isOrientationSettled = when (screenOrientationMode) {
+        ScreenOrientationMode.PORTRAIT -> isPortrait
+        ScreenOrientationMode.LANDSCAPE -> !isPortrait
+        ScreenOrientationMode.AUTO -> true
+    }
+    var hasSurfacesBeenCreated by remember { mutableStateOf(isOrientationSettled) }
+    LaunchedEffect(isOrientationSettled) {
+        if (isOrientationSettled) {
+            hasSurfacesBeenCreated = true
+        }
+    }
+
+    // The game is stretched into a 4:3 area in portrait and a 16:9 area in landscape.
+    val targetAspectRatio = if (isPortrait) 4f / 3f else 16f / 9f
+
+    val activity = LocalContext.current as? Activity
+    LaunchedEffect(activity, screenOrientationMode) {
+        activity?.requestedOrientation = screenOrientationMode.toRequestedOrientation()
+    }
+
+    // The surface is 4:3 in portrait and 16:9 in landscape. In landscape that already matches
+    // most titles, so the user's fullscreen scaling setting is kept; in portrait the game has to
+    // be stretched (non proportionally) to fill the 4:3 area.
+    val storedFullscreenScaling = remember { NativeSettings.getFullscreenScaling() }
+    LaunchedEffect(isPortrait) {
+        NativeSettings.setFullscreenScaling(
+            if (isPortrait) {
+                NativeSettings.FullscreenScaling.STRETCH
+            } else {
+                storedFullscreenScaling
+            }
+        )
+    }
 
     fun closeDrawer() {
         scope.launch {
@@ -188,6 +257,17 @@ fun EmulationScreen(
                         sideMenuState = sideMenuState,
                         controllerType = inputOverlayControllerType,
                         isEmulationInitialized = isEmulationInitialized,
+                        screenOrientationMode = screenOrientationMode,
+                        onScreenOrientationChanged = { viewModel.setScreenOrientation(it) },
+                        screensLayout = screensLayout,
+                        screensLayoutLabel = tr("TV / GamePad layout") + " — " +
+                            tr(if (isPortrait) "Portrait" else "Landscape"),
+                        onScreensLayoutChanged = {
+                            if (isPortrait) viewModel.setScreensLayoutPortrait(it)
+                            else viewModel.setScreensLayoutLandscape(it)
+                        },
+                        screensGap = screensGap,
+                        onScreensGapChanged = { viewModel.setScreensGap(it) },
                         onControllerTypeChanged = { controllerType ->
                             viewModel.setControllerType(
                                 rawInputOverlaySettings.controllerIndex,
@@ -231,10 +311,15 @@ fun EmulationScreen(
             }
         },
     ) {
-        EmulationSurfaces(
-            viewModel = viewModel,
-            isEmulationInitialized = isEmulationInitialized,
-        )
+        if (hasSurfacesBeenCreated) {
+            EmulationSurfaces(
+                viewModel = viewModel,
+                isEmulationInitialized = isEmulationInitialized,
+                screensLayout = screensLayout,
+                screensGap = screensGap,
+                targetAspectRatio = targetAspectRatio,
+            )
+        }
 
         InputOverlaySurface(
             isVisible = isInputOverlayVisible,
@@ -432,11 +517,29 @@ private fun isControllerTypeSwitchAllowed(currentType: Int, newType: Int): Boole
     return isAlreadyWpad || counts.wpadCount < NativeInput.MAX_WPAD_CONTROLLERS
 }
 
+private fun screenOrientationModeToString(mode: ScreenOrientationMode): String = when (mode) {
+    ScreenOrientationMode.PORTRAIT -> tr("Portrait")
+    ScreenOrientationMode.AUTO -> tr("Auto")
+    ScreenOrientationMode.LANDSCAPE -> tr("Landscape")
+}
+
+private fun screensLayoutToString(layout: ScreensLayout): String = when (layout) {
+    ScreensLayout.TOP_DOWN -> tr("Top / down")
+    ScreensLayout.SIDE_BY_SIDE -> tr("Side by side")
+}
+
 @Composable
 private fun EmulationSideMenuContent(
     sideMenuState: SideMenuState,
     controllerType: Int,
     isEmulationInitialized: Boolean,
+    screenOrientationMode: ScreenOrientationMode,
+    onScreenOrientationChanged: (ScreenOrientationMode) -> Unit,
+    screensLayout: ScreensLayout,
+    screensLayoutLabel: String,
+    onScreensLayoutChanged: (ScreensLayout) -> Unit,
+    screensGap: Int,
+    onScreensGapChanged: (Int) -> Unit,
     onControllerTypeChanged: (Int) -> Unit,
     updateState: (SideMenuState) -> Unit,
     onShowEmulatedUSBDevices: () -> Unit,
@@ -457,6 +560,31 @@ private fun EmulationSideMenuContent(
         enabled = isEmulationInitialized,
         isChoiceEnabled = { isControllerTypeSwitchAllowed(controllerType, it) },
         onChoiceChanged = onControllerTypeChanged,
+    )
+
+    SingleSelection(
+        label = tr("Orientation"),
+        choice = screenOrientationMode,
+        choices = ScreenOrientationMode.entries,
+        choiceToString = { screenOrientationModeToString(it) },
+        onChoiceChanged = onScreenOrientationChanged,
+    )
+
+    SingleSelection(
+        label = screensLayoutLabel,
+        choice = screensLayout,
+        choices = ScreensLayout.entries,
+        choiceToString = { screensLayoutToString(it) },
+        onChoiceChanged = onScreensLayoutChanged,
+    )
+
+    Slider(
+        label = tr("Screen gap"),
+        value = screensGap,
+        valueFrom = 0,
+        valueTo = MAX_SCREENS_GAP,
+        labelFormatter = { "$it%" },
+        onValueChange = onScreensGapChanged,
     )
 
     CheckboxItem(
@@ -604,15 +732,15 @@ private fun TextButtonItem(
 private fun EmulationSurfaces(
     viewModel: EmulationViewModel,
     isEmulationInitialized: Boolean,
+    screensLayout: ScreensLayout,
+    screensGap: Int,
+    targetAspectRatio: Float,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
     val sideMenuState by viewModel.sideMenuState.collectAsState()
-    val gamePadPosition by viewModel.gamePadPosition.collectAsState()
     val mainSurfaceDimensions by viewModel.mainSurfaceDimensions.collectAsState()
     val padSurfaceDimensions by viewModel.padSurfaceDimensions.collectAsState()
-
-    val currentGamePadPosition = gamePadPosition ?: return
 
     val padDisplay = if (activity != null) rememberPadDisplay(activity) else null
     val isPadVisibleEffective = sideMenuState.isPadVisible && isEmulationInitialized
@@ -664,9 +792,12 @@ private fun EmulationSurfaces(
         onDispose { padPresentation.dismiss() }
     }
 
-    LinearLayout(currentGamePadPosition) { itemModifier ->
+    ScreensLayoutContainer(
+        isVertical = screensLayout.isVertical(),
+        gapPercent = screensGap,
+        targetAspectRatio = targetAspectRatio,
+    ) {
         EmulationSurface(
-            modifier = itemModifier,
             holderCallback = viewModel.mainHolderCallback,
             touchListener = mainTouchListener,
             touchIsTv = isMainTargetingTV,
@@ -677,7 +808,6 @@ private fun EmulationSurfaces(
 
         if (isPadVisibleEffective && !usePadPresentation) {
             EmulationSurface(
-                modifier = itemModifier,
                 holderCallback = viewModel.padHolderCallback,
                 touchListener = padTouchListener,
                 touchIsTv = isPadTargetingTV,
@@ -688,30 +818,77 @@ private fun EmulationSurfaces(
     }
 }
 
+// Lays out the TV / GamePad surfaces without ever swapping the composable that contains them.
+// Switching between a Column and a Row when the orientation or the layout changes would dispose
+// and recreate the SurfaceViews, which destroys and recreates their native surfaces and can crash
+// the renderer. A single custom layout instead just measures its children differently.
 @Composable
-private fun LinearLayout(
-    gamePadPosition: GamePadPosition,
-    content: @Composable (itemModifier: Modifier) -> Unit,
+private fun ScreensLayoutContainer(
+    isVertical: Boolean,
+    gapPercent: Int,
+    targetAspectRatio: Float,
+    content: @Composable () -> Unit,
 ) {
-    if (gamePadPosition.isVertical()) {
-        val arrangement =
-            if (gamePadPosition.appearsAfterTV()) Arrangement.Top else Arrangement.Bottom
-
-        Column(
-            modifier = Modifier.fillMaxSize(), verticalArrangement = arrangement
-        ) {
-            content(Modifier.weight(1f))
+    Layout(
+        content = content,
+        modifier = Modifier.fillMaxSize(),
+    ) { measurables, constraints ->
+        val containerWidth = constraints.maxWidth
+        val containerHeight = constraints.maxHeight
+        val count = measurables.size
+        if (count == 0) {
+            return@Layout layout(containerWidth, containerHeight) {}
         }
-    } else {
-        val arrangement =
-            if (gamePadPosition.appearsAfterTV()) Arrangement.Start else Arrangement.End
+        val gap = if (count > 1) {
+            (min(containerWidth, containerHeight) * gapPercent / 100f).roundToInt()
+        } else {
+            0
+        }
 
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = arrangement,
-            ) {
-                content(Modifier.weight(1f))
+        // Each screen keeps its aspect ratio. In portrait (vertical) a full width screen may be
+        // too tall, so its height is capped; in landscape (side by side) the width is capped.
+        val sizes = if (isVertical) {
+            val share = (containerHeight - gap * (count - 1)) / count
+            val boxWidth = min(containerWidth, (share * targetAspectRatio).roundToInt())
+            val boxHeight = (boxWidth / targetAspectRatio).roundToInt()
+            List(count) { boxWidth to boxHeight }
+        } else {
+            val share = (containerWidth - gap * (count - 1)) / count
+            val boxHeight = min(containerHeight, (share / targetAspectRatio).roundToInt())
+            val boxWidth = (boxHeight * targetAspectRatio).roundToInt()
+            List(count) { boxWidth to boxHeight }
+        }
+
+        val placeables = measurables.mapIndexed { index, measurable ->
+            val (width, height) = sizes[index]
+            measurable.measure(Constraints.fixed(width, height))
+        }
+
+        layout(containerWidth, containerHeight) {
+            if (isVertical) {
+                // Stacked from the top so a lone screen is not floating in the middle.
+                var y = 0
+                placeables.forEach { placeable ->
+                    placeable.place(
+                        IntOffset(
+                            x = (containerWidth - placeable.width) / 2,
+                            y = y,
+                        )
+                    )
+                    y += placeable.height + gap
+                }
+            } else {
+                val totalWidth = placeables.sumOf { it.width } + gap * (count - 1)
+                var x = (containerWidth - totalWidth) / 2
+                placeables.forEach { placeable ->
+                    placeable.place(
+                        IntOffset(
+                            x = x,
+                            y = (containerHeight - placeable.height) / 2,
+                        )
+                    )
+                    x += placeable.width + gap
+                }
             }
         }
     }
@@ -720,7 +897,6 @@ private fun LinearLayout(
 @Composable
 @SuppressLint("ClickableViewAccessibility")
 private fun EmulationSurface(
-    modifier: Modifier,
     holderCallback: SurfaceHolder.Callback,
     touchListener: CanvasOnTouchListener,
     touchIsTv: Boolean,
@@ -729,8 +905,9 @@ private fun EmulationSurface(
     rotateLeft: Boolean = false,
     afterInit: () -> Unit = {}
 ) {
+    // The size (and aspect ratio) is decided by ScreensLayoutContainer.
     AndroidView(
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
         factory = { context ->
             SurfaceView(context).apply {
                 var firstChange = true

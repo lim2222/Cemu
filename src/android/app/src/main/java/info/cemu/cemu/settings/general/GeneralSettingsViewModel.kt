@@ -7,8 +7,9 @@ import androidx.lifecycle.viewModelScope
 import info.cemu.cemu.common.settings.AppSettings
 import info.cemu.cemu.common.settings.AppSettingsStore
 import info.cemu.cemu.common.settings.EmulationSettings
-import info.cemu.cemu.common.settings.GamePadPosition
 import info.cemu.cemu.common.settings.GuiSettings
+import info.cemu.cemu.common.settings.ScreenOrientationMode
+import info.cemu.cemu.common.settings.ScreensLayout
 import info.cemu.cemu.common.ui.localization.getAvailableLanguages
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
@@ -48,12 +49,48 @@ class GeneralSettingsViewModel(
         }
     }
 
-    fun setGamePadPosition(gamePadPosition: GamePadPosition) {
+    fun setScreenOrientation(mode: ScreenOrientationMode) {
         viewModelScope.launch {
             dataStore.updateData {
                 it.copy(
                     emulationSettings = it.emulationSettings.copy(
-                        gamePadPosition = gamePadPosition
+                        screenOrientation = mode
+                    )
+                )
+            }
+        }
+    }
+
+    fun setScreensLayoutPortrait(layout: ScreensLayout) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(
+                    emulationSettings = it.emulationSettings.copy(
+                        screensLayoutPortrait = layout
+                    )
+                )
+            }
+        }
+    }
+
+    fun setScreensLayoutLandscape(layout: ScreensLayout) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(
+                    emulationSettings = it.emulationSettings.copy(
+                        screensLayoutLandscape = layout
+                    )
+                )
+            }
+        }
+    }
+
+    fun setScreensGap(gap: Int) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                it.copy(
+                    emulationSettings = it.emulationSettings.copy(
+                        screensGap = gap
                     )
                 )
             }

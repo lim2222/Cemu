@@ -16,9 +16,13 @@ import info.cemu.cemu.common.either.bind
 import info.cemu.cemu.common.either.mapError
 import info.cemu.cemu.common.settings.AppSettings
 import info.cemu.cemu.common.settings.AppSettingsStore
+import info.cemu.cemu.common.settings.EmulationSettings
 import info.cemu.cemu.common.settings.InputOverlayRect
 import info.cemu.cemu.common.settings.InputOverlaySettings
 import info.cemu.cemu.common.settings.OverlayInputConfig
+import info.cemu.cemu.common.settings.PerGameDisplaySettings
+import info.cemu.cemu.common.settings.ScreenOrientationMode
+import info.cemu.cemu.common.settings.ScreensLayout
 import info.cemu.cemu.common.settings.inputOverlayKey
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.PrepareTitleResult
@@ -281,12 +285,54 @@ class EmulationViewModel(
         }
     }
 
-    val gamePadPosition = dataStore.data.map { it.emulationSettings.gamePadPosition }
+    // The per-game display overrides (orientation and TV/GamePad layout). Missing values fall
+    // back to the global defaults which are resolved by the caller.
+    val perGameDisplaySettings = dataStore.data.map { it.displaySettingsByGame[launchPath] }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
             null,
         )
+
+    // The global display defaults, only used as a fallback for values that have no per-game
+    // override yet.
+    val globalDisplaySettings = dataStore.data.map { it.emulationSettings }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            EmulationSettings(),
+        )
+
+    fun setScreenOrientation(mode: ScreenOrientationMode) {
+        updatePerGameDisplaySettings { it.copy(screenOrientation = mode) }
+    }
+
+    fun setScreensLayoutPortrait(layout: ScreensLayout) {
+        updatePerGameDisplaySettings { it.copy(screensLayoutPortrait = layout) }
+    }
+
+    fun setScreensLayoutLandscape(layout: ScreensLayout) {
+        updatePerGameDisplaySettings { it.copy(screensLayoutLandscape = layout) }
+    }
+
+    fun setScreensGap(gap: Int) {
+        updatePerGameDisplaySettings { it.copy(screensGap = gap) }
+    }
+
+    private fun updatePerGameDisplaySettings(
+        transform: (PerGameDisplaySettings) -> PerGameDisplaySettings,
+    ) {
+        viewModelScope.launch {
+            dataStore.updateData {
+                val current = it.displaySettingsByGame[launchPath] ?: PerGameDisplaySettings()
+
+                it.copy(
+                    displaySettingsByGame =
+                        it.displaySettingsByGame + (launchPath to transform(current)),
+                )
+            }
+        }
+    }
 
     val destroyedSurfaces = ConditionFlags()
     var setSurfaces = ConditionFlags()

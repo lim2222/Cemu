@@ -6,10 +6,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
-import info.cemu.cemu.common.settings.GamePadPosition
+import info.cemu.cemu.common.settings.MAX_SCREENS_GAP
+import info.cemu.cemu.common.settings.ScreenOrientationMode
+import info.cemu.cemu.common.settings.ScreensLayout
 import info.cemu.cemu.common.ui.components.Button
 import info.cemu.cemu.common.ui.components.ScreenContent
 import info.cemu.cemu.common.ui.components.SingleSelection
+import info.cemu.cemu.common.ui.components.Slider
 import info.cemu.cemu.common.ui.localization.tr
 import info.cemu.cemu.nativeinterface.NativeSettings
 
@@ -68,20 +71,49 @@ fun GeneralSettingsScreen(
         )
 
         SingleSelection(
-            label = tr("GamePad position"),
-            choice = emulationSettings.gamePadPosition,
-            onChoiceChanged = { viewModel.setGamePadPosition(it) },
-            choiceToString = { gamePadPositionToString(it) },
-            choices = GamePadPosition.entries,
+            label = tr("Orientation"),
+            choice = emulationSettings.screenOrientation,
+            onChoiceChanged = { viewModel.setScreenOrientation(it) },
+            choiceToString = { screenOrientationModeToString(it) },
+            choices = ScreenOrientationMode.entries,
+        )
+
+        SingleSelection(
+            label = tr("TV / GamePad layout (portrait)"),
+            choice = emulationSettings.screensLayoutPortrait,
+            onChoiceChanged = { viewModel.setScreensLayoutPortrait(it) },
+            choiceToString = { screensLayoutToString(it) },
+            choices = ScreensLayout.entries,
+        )
+
+        SingleSelection(
+            label = tr("TV / GamePad layout (landscape)"),
+            choice = emulationSettings.screensLayoutLandscape,
+            onChoiceChanged = { viewModel.setScreensLayoutLandscape(it) },
+            choiceToString = { screensLayoutToString(it) },
+            choices = ScreensLayout.entries,
+        )
+
+        Slider(
+            label = tr("Screen gap"),
+            value = emulationSettings.screensGap,
+            valueFrom = 0,
+            valueTo = MAX_SCREENS_GAP,
+            labelFormatter = { "$it%" },
+            onValueChange = { viewModel.setScreensGap(it) },
         )
     }
 }
 
-private fun gamePadPositionToString(position: GamePadPosition) = when (position) {
-    GamePadPosition.ABOVE -> tr("Above")
-    GamePadPosition.BELOW -> tr("Below")
-    GamePadPosition.LEFT -> tr("Left")
-    GamePadPosition.RIGHT -> tr("Right")
+private fun screenOrientationModeToString(mode: ScreenOrientationMode) = when (mode) {
+    ScreenOrientationMode.PORTRAIT -> tr("Portrait")
+    ScreenOrientationMode.AUTO -> tr("Auto")
+    ScreenOrientationMode.LANDSCAPE -> tr("Landscape")
+}
+
+private fun screensLayoutToString(layout: ScreensLayout) = when (layout) {
+    ScreensLayout.TOP_DOWN -> tr("Top / down")
+    ScreensLayout.SIDE_BY_SIDE -> tr("Side by side")
 }
 
 private fun consoleLanguageToString(channels: Int): String = when (channels) {
