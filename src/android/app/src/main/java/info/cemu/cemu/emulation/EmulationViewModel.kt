@@ -23,7 +23,9 @@ import info.cemu.cemu.common.settings.OverlayInputConfig
 import info.cemu.cemu.common.settings.PerGameDisplaySettings
 import info.cemu.cemu.common.settings.ScreenOrientationMode
 import info.cemu.cemu.common.settings.ScreensLayout
+import info.cemu.cemu.common.settings.inputOverlayAlphaKey
 import info.cemu.cemu.common.settings.inputOverlayKey
+import info.cemu.cemu.common.settings.inputOverlayOrientationKey
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.PrepareTitleResult
 import info.cemu.cemu.nativeinterface.NativeException
@@ -43,7 +45,6 @@ import kotlinx.coroutines.launch
 data class SideMenuState(
     val isMotionEnabled: Boolean = false,
     val isTVReplacedWithPad: Boolean = false,
-    val isPadVisible: Boolean = false,
     val isPadOnExternalDisplay: Boolean = false,
     val areScreensSwapped: Boolean = false,
     val isExternalScreenRotatedLeft: Boolean = false,
@@ -122,7 +123,6 @@ class EmulationViewModel(
             _controllerType.value = NativeInput.getControllerType(overlayControllerIndex)
             _sideMenuState.update {
                 it.copy(
-                    isPadVisible = settings.emulationSettings.isPadVisible,
                     isPadOnExternalDisplay = settings.emulationSettings.isPadOnExternalDisplay,
                     isExternalScreenRotatedLeft = settings.emulationSettings.isExternalScreenRotatedLeft,
                     isInputOverlayVisible = settings.inputOverlaySettings.isOverlayEnabled,
@@ -131,8 +131,8 @@ class EmulationViewModel(
         }
     }
 
-    // Raw settings. The per game/controller type layout is resolved by the caller with
-    // resolvedForGame(launchPath, inputOverlayKey(launchPath, controllerType)).
+    // Raw settings. The per game/controller type/orientation layout is resolved by the caller
+    // with resolvedForGame(launchPath, inputOverlayKey(...), inputOverlayOrientationKey(...)).
     val inputOverlaySettings = dataStore.data
         .map { it.inputOverlaySettings }
         .stateIn(
@@ -143,12 +143,13 @@ class EmulationViewModel(
 
     fun saveInputOverlayRectangles(
         controllerType: Int,
+        isPortrait: Boolean,
         inputOverlayRectMap: Map<OverlayInputConfig, InputOverlayRect>,
     ) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
-                val key = inputOverlayKey(launchPath, controllerType)
+                val key = inputOverlayOrientationKey(launchPath, controllerType, isPortrait)
                 val gameRectMap =
                     (overlaySettings.inputOverlayRectMapByGame[key] ?: emptyMap()) +
                         inputOverlayRectMap
@@ -165,16 +166,19 @@ class EmulationViewModel(
 
     fun setInputOverlayVisibility(
         controllerType: Int,
+        isPortrait: Boolean,
         input: OverlayInputConfig,
         visible: Boolean,
     ) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
-                val key = inputOverlayKey(launchPath, controllerType)
+                val baseKey = inputOverlayKey(launchPath, controllerType)
+                val key = inputOverlayOrientationKey(launchPath, controllerType, isPortrait)
                 val gameVisibilityMap =
-                    (overlaySettings.inputVisibilityMapByGame[key] ?: overlaySettings.inputVisibilityMap) +
-                        (input to visible)
+                    (overlaySettings.inputVisibilityMapByGame[key]
+                        ?: overlaySettings.inputVisibilityMapByGame[baseKey]
+                        ?: overlaySettings.inputVisibilityMap) + (input to visible)
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
@@ -186,16 +190,19 @@ class EmulationViewModel(
         }
     }
 
-    fun resetInputOverlayLayout(controllerType: Int) {
+    fun resetInputOverlayLayout(controllerType: Int, isPortrait: Boolean) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
-                val key = inputOverlayKey(launchPath, controllerType)
+                // Only the orientation the user is currently looking at is reset. Buttons can be
+                // pushed off screen in one orientation, so resetting to bring them back must not
+                // destroy what was already prepared for the other orientation.
+                val key = inputOverlayOrientationKey(launchPath, controllerType, isPortrait)
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
                         inputOverlayRectMapByGame = overlaySettings.inputOverlayRectMapByGame +
-                                (key to emptyMap<OverlayInputConfig, InputOverlayRect>()),
+                            (key to emptyMap<OverlayInputConfig, InputOverlayRect>()),
                         inputVisibilityMapByGame = overlaySettings.inputVisibilityMapByGame +
                             (key to emptyMap<OverlayInputConfig, Boolean>()),
                     )
@@ -236,15 +243,16 @@ class EmulationViewModel(
         }
     }
 
-    fun setInputOverlayAlpha(alpha: Int) {
+    fun setInputOverlayAlpha(alpha: Int, isPortrait: Boolean) {
         viewModelScope.launch {
             dataStore.updateData {
                 val overlaySettings = it.inputOverlaySettings
+                val key = inputOverlayAlphaKey(launchPath, isPortrait)
 
                 it.copy(
                     inputOverlaySettings = overlaySettings.copy(
                         inputOverlayAlphaByGame =
-                            overlaySettings.inputOverlayAlphaByGame + (launchPath to alpha),
+                            overlaySettings.inputOverlayAlphaByGame + (key to alpha),
                     )
                 )
             }
@@ -255,15 +263,13 @@ class EmulationViewModel(
         val oldState = _sideMenuState.value
         _sideMenuState.value = sideMenuState
 
-        if (oldState.isPadVisible != sideMenuState.isPadVisible ||
-            oldState.isPadOnExternalDisplay != sideMenuState.isPadOnExternalDisplay ||
+        if (oldState.isPadOnExternalDisplay != sideMenuState.isPadOnExternalDisplay ||
             oldState.isExternalScreenRotatedLeft != sideMenuState.isExternalScreenRotatedLeft
         ) {
             viewModelScope.launch {
                 dataStore.updateData {
                     it.copy(
                         emulationSettings = it.emulationSettings.copy(
-                            isPadVisible = sideMenuState.isPadVisible,
                             isPadOnExternalDisplay = sideMenuState.isPadOnExternalDisplay,
                             isExternalScreenRotatedLeft = sideMenuState.isExternalScreenRotatedLeft,
                         )
@@ -282,6 +288,15 @@ class EmulationViewModel(
                     )
                 }
             }
+        }
+    }
+
+    // The GamePad screen is shown based on the current orientation and remembered per game, like
+    // the TV/GamePad layout. Missing per-game values fall back to the global default.
+    fun setPadVisible(isPortrait: Boolean, visible: Boolean) {
+        updatePerGameDisplaySettings {
+            if (isPortrait) it.copy(isPadVisiblePortrait = visible)
+            else it.copy(isPadVisibleLandscape = visible)
         }
     }
 

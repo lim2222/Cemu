@@ -105,11 +105,15 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        if (oldw == 0 || oldh == 0) {
-            setInputs()
-        }
-
         super.onSizeChanged(w, h, oldw, oldh)
+        // Default positions are derived from the view size, so they have to be recomputed whenever
+        // the view is (re)sized, for example when the device rotates between portrait and
+        // landscape. Custom positions/sizes are read from the settings by setInputs() and are
+        // left untouched.
+        if (w > 0 && h > 0 && (oldw == 0 || oldh == 0 || w != oldw || h != oldh)) {
+            setInputs()
+            invalidate()
+        }
     }
 
     fun setInputMode(inputMode: InputMode) {

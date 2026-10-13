@@ -70,7 +70,9 @@ import info.cemu.cemu.common.settings.HotkeyAction
 import info.cemu.cemu.common.settings.MAX_SCREENS_GAP
 import info.cemu.cemu.common.settings.ScreenOrientationMode
 import info.cemu.cemu.common.settings.ScreensLayout
+import info.cemu.cemu.common.settings.inputOverlayAlphaKey
 import info.cemu.cemu.common.settings.inputOverlayKey
+import info.cemu.cemu.common.settings.inputOverlayOrientationKey
 import info.cemu.cemu.common.settings.OverlayInputConfig
 import info.cemu.cemu.common.ui.components.SingleSelection
 import info.cemu.cemu.common.ui.components.Slider
@@ -119,24 +121,29 @@ fun EmulationScreen(
     val isEmulationInitialized by viewModel.isEmulationInitialized.collectAsState()
     val sideMenuState by viewModel.sideMenuState.collectAsState()
     val isInputOverlayVisible by viewModel.isInputOverlayVisible.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
     val rawInputOverlaySettings by viewModel.inputOverlaySettings.collectAsState()
     // The emulated controller type of the overlay's controller. It comes from the view model so
     // it also updates when the type is changed from the side menu while the game is running.
     val inputOverlayControllerType by viewModel.controllerType.collectAsState()
-    // The layout is stored per game *and* per controller type, so a game played with e.g. a
-    // GamePad and a Pro Controller keeps a separate arrangement for each.
-    val inputOverlaySettings = remember(rawInputOverlaySettings, inputOverlayControllerType) {
-        rawInputOverlaySettings.resolvedForGame(
-            gamePath,
-            inputOverlayKey(gamePath, inputOverlayControllerType),
-        )
-    }
+    // The layout is stored per game, controller type *and* screen orientation, so a game played
+    // with e.g. a GamePad and a Pro Controller keeps a separate arrangement for each, and moving
+    // the buttons in portrait never affects the landscape arrangement (or the other way around).
+    val inputOverlaySettings =
+        remember(rawInputOverlaySettings, inputOverlayControllerType, isPortrait) {
+            rawInputOverlaySettings.resolvedForGame(
+                gamePath,
+                inputOverlayKey(gamePath, inputOverlayControllerType),
+                inputOverlayOrientationKey(gamePath, inputOverlayControllerType, isPortrait),
+                inputOverlayAlphaKey(gamePath, isPortrait),
+            )
+        }
 
     // Display orientation and the TV/GamePad layout. Both are stored per game with a global
     // fallback so a title can deviate from the global default.
-    val configuration = LocalConfiguration.current
-    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-
     val perGameDisplaySettings by viewModel.perGameDisplaySettings.collectAsState()
     val globalDisplaySettings by viewModel.globalDisplaySettings.collectAsState()
 
@@ -153,6 +160,15 @@ fun EmulationScreen(
 
     val screensGap = perGameDisplaySettings?.screensGap
         ?: globalDisplaySettings.screensGap
+
+    // Whether the GamePad screen is shown. It is stored per game and per orientation, like the
+    // TV/GamePad layout, because a screen that is hidden in portrait (where both would not fit)
+    // can still be shown in landscape, and games can differ.
+    val isPadVisible = if (isPortrait) {
+        perGameDisplaySettings?.isPadVisiblePortrait ?: globalDisplaySettings.isPadVisiblePortrait
+    } else {
+        perGameDisplaySettings?.isPadVisibleLandscape ?: globalDisplaySettings.isPadVisibleLandscape
+    }
 
     // A portrait/landscape mode may differ from how the activity was created, which makes the
     // window rotate right after launch. Creating the emulation surface during that rotation makes
@@ -268,6 +284,8 @@ fun EmulationScreen(
                         },
                         screensGap = screensGap,
                         onScreensGapChanged = { viewModel.setScreensGap(it) },
+                        isPadVisible = isPadVisible,
+                        onPadVisibleChanged = { viewModel.setPadVisible(isPortrait, it) },
                         onControllerTypeChanged = { controllerType ->
                             viewModel.setControllerType(
                                 rawInputOverlaySettings.controllerIndex,
@@ -287,7 +305,10 @@ fun EmulationScreen(
                             closeDrawer()
                         },
                         onResetInputOverlay = {
-                            viewModel.resetInputOverlayLayout(inputOverlayControllerType)
+                            viewModel.resetInputOverlayLayout(
+                                inputOverlayControllerType,
+                                isPortrait,
+                            )
                             closeDrawer()
                         },
                         onEditVisibleInputs = {
@@ -297,7 +318,7 @@ fun EmulationScreen(
                         isVibrateOnTouchEnabled = inputOverlaySettings.isVibrateOnTouchEnabled,
                         overlayAlpha = inputOverlaySettings.alpha,
                         onVibrateChanged = { viewModel.setInputOverlayVibrateOnTouch(it) },
-                        onAlphaChanged = { viewModel.setInputOverlayAlpha(it) },
+                        onAlphaChanged = { viewModel.setInputOverlayAlpha(it, isPortrait) },
                         onQuit = {
                             showQuitConfirmationDialog = true
                             closeDrawer()
@@ -317,6 +338,7 @@ fun EmulationScreen(
                 isEmulationInitialized = isEmulationInitialized,
                 screensLayout = screensLayout,
                 screensGap = screensGap,
+                isPadVisible = isPadVisible,
                 targetAspectRatio = targetAspectRatio,
             )
         }
@@ -326,7 +348,9 @@ fun EmulationScreen(
             inputOverlaySettings = inputOverlaySettings,
             controllerType = inputOverlayControllerType,
             inputMode = inputOverlayInputMode,
-            onEditFinished = { viewModel.saveInputOverlayRectangles(inputOverlayControllerType, it) },
+            onEditFinished = {
+                viewModel.saveInputOverlayRectangles(inputOverlayControllerType, isPortrait, it)
+            },
         )
 
         if (inputOverlayInputMode != DEFAULT) {
@@ -383,7 +407,12 @@ fun EmulationScreen(
             controllerType = inputOverlayControllerType,
             inputVisibilityMap = inputOverlaySettings.inputVisibilityMap,
             onToggle = { input, visible ->
-                viewModel.setInputOverlayVisibility(inputOverlayControllerType, input, visible)
+                viewModel.setInputOverlayVisibility(
+                    inputOverlayControllerType,
+                    isPortrait,
+                    input,
+                    visible,
+                )
             },
             onDismiss = { showInputVisibilityDialog = false },
         )
@@ -540,6 +569,8 @@ private fun EmulationSideMenuContent(
     onScreensLayoutChanged: (ScreensLayout) -> Unit,
     screensGap: Int,
     onScreensGapChanged: (Int) -> Unit,
+    isPadVisible: Boolean,
+    onPadVisibleChanged: (Boolean) -> Unit,
     onControllerTypeChanged: (Int) -> Unit,
     updateState: (SideMenuState) -> Unit,
     onShowEmulatedUSBDevices: () -> Unit,
@@ -601,15 +632,15 @@ private fun EmulationSideMenuContent(
 
     CheckboxItem(
         label = tr("Show PAD"),
-        checked = sideMenuState.isPadVisible,
-        onCheckedChange = { updateState(sideMenuState.copy(isPadVisible = it)) },
+        checked = isPadVisible,
+        onCheckedChange = onPadVisibleChanged,
     )
 
     CheckboxItem(
         label = tr("External PAD screen"),
         checked = sideMenuState.isPadOnExternalDisplay,
         onCheckedChange = { updateState(sideMenuState.copy(isPadOnExternalDisplay = it)) },
-        enabled = sideMenuState.isPadVisible,
+        enabled = isPadVisible,
     )
 
     CheckboxItem(
@@ -734,6 +765,7 @@ private fun EmulationSurfaces(
     isEmulationInitialized: Boolean,
     screensLayout: ScreensLayout,
     screensGap: Int,
+    isPadVisible: Boolean,
     targetAspectRatio: Float,
 ) {
     val context = LocalContext.current
@@ -743,7 +775,7 @@ private fun EmulationSurfaces(
     val padSurfaceDimensions by viewModel.padSurfaceDimensions.collectAsState()
 
     val padDisplay = if (activity != null) rememberPadDisplay(activity) else null
-    val isPadVisibleEffective = sideMenuState.isPadVisible && isEmulationInitialized
+    val isPadVisibleEffective = isPadVisible && isEmulationInitialized
     val usePadPresentation =
         isPadVisibleEffective && sideMenuState.isPadOnExternalDisplay && padDisplay != null
 

@@ -24,7 +24,11 @@ data class EmulationSettings(
     // Empty space between the TV and GamePad screens, as a percentage of the smaller screen
     // dimension so it looks the same in portrait and landscape.
     val screensGap: Int = DEFAULT_SCREENS_GAP,
-    val isPadVisible: Boolean = false,
+    // Whether the emulated GamePad screen is shown. Portrait and landscape keep their own value
+    // so a screen that is hidden in portrait (where it would not fit) can still be shown in
+    // landscape.
+    val isPadVisiblePortrait: Boolean = false,
+    val isPadVisibleLandscape: Boolean = false,
     val isPadOnExternalDisplay: Boolean = false,
     val isExternalScreenRotatedLeft: Boolean = false,
 )
@@ -40,6 +44,9 @@ data class PerGameDisplaySettings(
     val screensLayoutPortrait: ScreensLayout? = null,
     val screensLayoutLandscape: ScreensLayout? = null,
     val screensGap: Int? = null,
+    // Per-game override for the GamePad screen visibility, one value per orientation.
+    val isPadVisiblePortrait: Boolean? = null,
+    val isPadVisibleLandscape: Boolean? = null,
 )
 
 @Serializable
@@ -84,20 +91,40 @@ data class InputOverlaySettings(
     // controller types (GamePad, Pro Controller, ...) which need their own arrangement, so the
     // key also contains the controller type. Games do not affect each other.
     val inputVisibilityMapByGame: Map<String, Map<OverlayInputConfig, Boolean>> = emptyMap(),
+    // Both maps are keyed like above, but with the screen orientation appended
+    // (inputOverlayOrientationKey()). A layout that fits portrait does not fit landscape and the
+    // available space differs, so editing one orientation never changes the other one.
     val inputOverlayRectMapByGame: Map<String, Map<OverlayInputConfig, InputOverlayRect>> = emptyMap(),
-    // These are game preferences rather than controller specific, so they are keyed by game only.
+    // These are game preferences rather than controller specific, so they are keyed by game (the
+    // opacity additionally by orientation through inputOverlayAlphaKey()).
     val inputOverlayAlphaByGame: Map<String, Int> = emptyMap(),
     val inputOverlayVibrateByGame: Map<String, Boolean> = emptyMap(),
 ) {
-    fun resolvedForGame(gameKey: String?, overlayKey: String?): InputOverlaySettings {
+    fun resolvedForGame(
+        gameKey: String?,
+        overlayKey: String?,
+        overlayOrientationKey: String? = null,
+        overlayAlphaKey: String? = null,
+    ): InputOverlaySettings {
         if (gameKey == null || overlayKey == null) {
             return this
         }
 
+        val orientationKey = overlayOrientationKey ?: overlayKey
+        val alphaKey = overlayAlphaKey ?: gameKey
+
         return copy(
-            inputVisibilityMap = inputVisibilityMapByGame[overlayKey] ?: inputVisibilityMap,
-            inputOverlayRectMap = inputOverlayRectMapByGame[overlayKey] ?: inputOverlayRectMap,
-            alpha = inputOverlayAlphaByGame[gameKey] ?: alpha,
+            // Fall back to the key used before portrait/landscape were split so arrangements
+            // saved by older builds keep working, then to the global defaults.
+            inputVisibilityMap = inputVisibilityMapByGame[orientationKey]
+                ?: inputVisibilityMapByGame[overlayKey]
+                ?: inputVisibilityMap,
+            inputOverlayRectMap = inputOverlayRectMapByGame[orientationKey]
+                ?: inputOverlayRectMapByGame[overlayKey]
+                ?: inputOverlayRectMap,
+            alpha = inputOverlayAlphaByGame[alphaKey]
+                ?: inputOverlayAlphaByGame[gameKey]
+                ?: alpha,
             isVibrateOnTouchEnabled = inputOverlayVibrateByGame[gameKey] ?: isVibrateOnTouchEnabled,
         )
     }
@@ -106,6 +133,16 @@ data class InputOverlaySettings(
 // The controller type is prefixed so the key stays unique even when the game path contains
 // separators: the part before the first ':' is always the numeric controller type.
 fun inputOverlayKey(gamePath: String, controllerType: Int): String = "$controllerType:$gamePath"
+
+// Overlay visibility, positions and sizes are stored per orientation as well. The key is only
+// ever compared, never parsed, so it is safe to append the orientation to the game/controller key.
+fun inputOverlayOrientationKey(gamePath: String, controllerType: Int, isPortrait: Boolean): String =
+    inputOverlayKey(gamePath, controllerType) + if (isPortrait) ":portrait" else ":landscape"
+
+// Opacity is not controller specific, but it is stored per orientation: the two orientations can
+// need a different opacity. The key is only ever compared, never parsed.
+fun inputOverlayAlphaKey(gamePath: String, isPortrait: Boolean): String =
+    gamePath + if (isPortrait) ":portrait" else ":landscape"
 
 
 @Serializable
