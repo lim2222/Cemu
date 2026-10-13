@@ -35,7 +35,7 @@ val versionMinor: Int? = System.getenv("EMULATOR_VERSION_MINOR")?.toIntOrNull()
 fun getVersionName(): String {
     if (versionMajor != null && versionMinor != null)
         return "$versionMajor.$versionMinor"
-    return "0.5.1"
+    return "0.5.2+Taiko.1.0"
 }
 
 val cemuDataFilesFolder = "../../../bin"
@@ -49,7 +49,7 @@ android {
         minSdk = 30
         targetSdk = 35
         versionName = getVersionName()
-        versionCode = 51
+        versionCode = 52
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

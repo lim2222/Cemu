@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Rect
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.DisplayMetrics
@@ -69,6 +70,9 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
         get() = settings.isVibrateOnTouchEnabled && vibrator.hasVibrator()
 	private val vibrationAmplitude: Int
 		get() = settings.vibrationAmplitude
+    // Timestamp of the last haptic pulse, used to space out the pulses so a second finger does
+    // not cancel a rumble that is already running.
+    private var lastVibrateTime = 0L
 		
     init {
         visibility = GONE
@@ -238,11 +242,50 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
             return
         }
 
-        if (isVibrateOnTouchEnabled && state) {
-			vibrator.vibrate(VibrationEffect.createOneShot(100L, vibrationAmplitude))
-		}
+        if (state) {
+            triggerHapticFeedback()
+        }
 
         onOverlayButton(controllerIndex, nativeButtonId, state)
+    }
+
+    // Ported from the classic Android overlay haptics: instead of one fixed pulse per touch, a
+    // short tap stays crisp while rapid hits (drum rolls, mashing) become a softer, slightly
+    // longer pulse so the motor keeps spinning instead of stopping and restarting with a clack.
+    // A debounce window keeps a second finger from cancelling a pulse that is already running.
+    private fun triggerHapticFeedback() {
+        if (!isVibrateOnTouchEnabled) {
+            return
+        }
+
+        val strength = vibrationAmplitude
+        if (strength <= 0) {
+            return
+        }
+
+        val now = SystemClock.uptimeMillis()
+        val delta = now - lastVibrateTime
+
+        if (delta < HAPTIC_DEBOUNCE_MS) {
+            return
+        }
+        lastVibrateTime = now
+
+        val norm = strength / 255f
+
+        val duration: Long
+        val amplitude: Int
+        if (delta < HAPTIC_RAPID_WINDOW_MS) {
+            // Rapid mode: soft, slightly longer pulse for a smooth roll.
+            duration = 50L + (norm * 15f).roundToInt()
+            amplitude = (strength * 0.33f).roundToInt().coerceAtLeast(1)
+        } else {
+            // Single tap: short, full-strength impact.
+            duration = 45L + (norm * 40f).roundToInt()
+            amplitude = strength
+        }
+
+        vibrator.vibrate(VibrationEffect.createOneShot(duration, amplitude.coerceIn(1, 255)))
     }
 
     private fun onOverlayAxis(axis: Int, value: Float) {
@@ -625,6 +668,12 @@ class InputOverlaySurfaceView(context: Context) : SurfaceView(context), OnTouchL
 
     companion object {
         private const val INPUTS_MIN_SIZE_DP = 20
+
+        // Haptic timing. A pulse within the debounce window is ignored (a second finger must not
+        // cancel the running pulse); a pulse within the rapid window switches to the softer,
+        // longer "rolling" pulse used for drum rolls / button mashing.
+        private const val HAPTIC_DEBOUNCE_MS = 40L
+        private const val HAPTIC_RAPID_WINDOW_MS = 180L
     }
 }
 
